@@ -1,5 +1,6 @@
 /*
  * This file is part of FFmpeg.
+ * Copyright (c) 2020 MainConcept GmbH or its affiliates.
  *
  * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,7 +29,7 @@
 #include "libavutil/version.h"
 
 #define LIBAVCODEC_VERSION_MAJOR  58
-#define LIBAVCODEC_VERSION_MINOR  54
+#define LIBAVCODEC_VERSION_MINOR  55
 #define LIBAVCODEC_VERSION_MICRO 100
 
 #define LIBAVCODEC_VERSION_INT  AV_VERSION_INT(LIBAVCODEC_VERSION_MAJOR, \

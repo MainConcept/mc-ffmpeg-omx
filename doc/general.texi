@@ -329,6 +329,15 @@ Go to @url{http://sourceforge.net/projects/zapping/} and follow the instructions
 installing the library. Then pass @code{--enable-libzvbi} to configure to
 enable it.
 
+@section OMX AVC encoder
+
+Pass @code{--enable-omx_enc_avc} to configure to enable it.
+
+@section OMX HEVC encoder
+
+Pass @code{--enable-omx_enc_hevc} to configure to enable it.
+
+
 @chapter Supported File Formats, Codecs or Features
 
 You can use the @code{-formats} and @code{-codecs} options to have an exhaustive list.

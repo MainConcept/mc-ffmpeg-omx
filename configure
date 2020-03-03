@@ -335,6 +335,8 @@ External library support:
   --disable-nvenc          disable Nvidia video encoding code [autodetect]
   --enable-omx             enable OpenMAX IL code [no]
   --enable-omx-rpi         enable OpenMAX IL code for Raspberry Pi [no]
+  --enable-omx_enc_avc     [no]
+  --enable-omx_enc_hevc    [no]
   --enable-rkmpp           enable Rockchip Media Process Platform code [no]
   --disable-v4l2-m2m       disable V4L2 mem2mem code [autodetect]
   --disable-vaapi          disable Video Acceleration API (mainly Unix/Intel) code [autodetect]
@@ -1812,6 +1814,8 @@ EXTERNAL_LIBRARY_LIST="
     opengl
     pocketsphinx
     vapoursynth
+    omx_enc_avc
+    omx_enc_hevc
 "
 
 HWACCEL_AUTODETECT_LIBRARY_LIST="
@@ -2980,6 +2984,9 @@ wmv3_dxva2_hwaccel_select="vc1_dxva2_hwaccel"
 wmv3_nvdec_hwaccel_select="vc1_nvdec_hwaccel"
 wmv3_vaapi_hwaccel_select="vc1_vaapi_hwaccel"
 wmv3_vdpau_hwaccel_select="vc1_vdpau_hwaccel"
+
+avc_omx_encoder_select="omx_enc_avc"
+hevc_omx_encoder_select="omx_enc_hevc"
 
 # hardware-accelerated codecs
 omx_deps="libdl pthreads"
@@ -6353,6 +6360,8 @@ enabled omx               && require_headers OMX_Core.h
 enabled omx_rpi           && { check_headers OMX_Core.h ||
                                { ! enabled cross_compile && add_cflags -isystem/opt/vc/include/IL && check_headers OMX_Core.h ; } ||
                                die "ERROR: OpenMAX IL headers not found"; } && enable omx
+enabled omx_enc_avc       && require_headers OMX_Core.h
+enabled omx_enc_hevc      && require_headers OMX_Core.h
 enabled openssl           && { check_pkg_config openssl openssl openssl/ssl.h OPENSSL_init_ssl ||
                                check_pkg_config openssl openssl openssl/ssl.h SSL_library_init ||
                                check_lib openssl openssl/ssl.h SSL_library_init -lssl -lcrypto ||

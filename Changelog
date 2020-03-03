@@ -1,6 +1,9 @@
 Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
+version <next>:
+- OMX AVC/HEVC encoders
+
 version 4.2.2
 - cbs_mpeg2: Fix parsing the last unit
 - cbs_mpeg2: Rearrange start code search

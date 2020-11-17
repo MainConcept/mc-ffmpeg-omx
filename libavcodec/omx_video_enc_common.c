@@ -165,15 +165,15 @@ int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHEADERTYP
         avpkt->dts = AV_NOPTS_VALUE;
     } else {
         const int64_t getting_pts =
-                (from_omx_ticks(buf->nTimeStamp) * (int64_t)avctx->time_base.den + 1000000l * (int64_t)avctx->time_base.num / 2) /
-                        (1000000l * avctx->time_base.num);
+                (from_omx_ticks(buf->nTimeStamp) * (int64_t)avctx->time_base.den + 1000000LL * (int64_t)avctx->time_base.num / 2) /
+                        (1000000LL * avctx->time_base.num);
         int64_t getting_dts = 0;
 
         int64_t dts_omx = AV_NOPTS_VALUE;
         parse_extradata(buf, &dts_omx);
 
-        getting_dts = (llabs(dts_omx) * (int64_t)avctx->time_base.den + 1000000l * avctx->time_base.num / 2) /
-                                    (1000000l * avctx->time_base.num);
+        getting_dts = (llabs(dts_omx) * (int64_t)avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
+                                    (1000000LL * avctx->time_base.num);
         getting_dts = dts_omx > 0 ? getting_dts : -getting_dts;
 
         avpkt->pts = getting_pts;

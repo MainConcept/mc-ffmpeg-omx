@@ -1,6 +1,6 @@
 /*
  * OMX Video encoder
- * Copyright (c) 2020 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2021 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,21 +26,24 @@
 
 static av_cold int omx_cmpnt_encoder_init(AVCodecContext *avctx)
 {
-    OMXAVCEncComponentContext *s = avctx->priv_data;
+    OMXAVCEncComponentContext *s_avc = avctx->priv_data;
+    OMXComponentContext *s = &s_avc->base;
 
-    int ret = omx_cmpnt_init(avctx);
+    s->avctx = avctx;
+
+    int ret = omx_cmpnt_init(s);
     if (ret) return ret;
 
     ret = omx_set_pic_param(avctx);
     if (ret) return ret;
 
-    ret = omx_set_avc_param(avctx, s->level);
+    ret = omx_set_avc_param(avctx, s_avc->level);
     if (ret) return ret;
 
     ret = omx_set_commandline(avctx);
     if (ret) return ret;
 
-    ret = omx_cmpnt_start(avctx);
+    ret = omx_cmpnt_start(s);
     if (ret) return ret;
 
     return 0;
@@ -55,21 +58,22 @@ const AVOption avc_enc_omx_options[] = {
 
         { "omx_param", "OMX component parameters", OFFSET(base.component_param), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, ED },
 
-        { "level"      , "Specify level", OFFSET(level), AV_OPT_TYPE_STRING, {.str=NULL},                   0, 0, ED },
+        { "level"      , "Specify level",          OFFSET(level),                AV_OPT_TYPE_STRING, { .str=NULL   }, 0, 0, ED },
 
         { "profile"    , NULL, OFFSET(base.profile), AV_OPT_TYPE_INT, {.i64 = FF_PROFILE_UNKNOWN }, INT_MIN, INT_MAX, ED, "profile" },
-        { "baseline"   , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_BASELINE     }, INT_MIN, INT_MAX, ED, "profile" },
-        { "main"       , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_MAIN         }, INT_MIN, INT_MAX, ED, "profile" },
-        { "extended"   , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_EXTENDED     }, INT_MIN, INT_MAX, ED, "profile" },
-        { "high"       , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH         }, INT_MIN, INT_MAX, ED, "profile" },
-        { "high_10"    , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_10      }, INT_MIN, INT_MAX, ED, "profile" },
-        { "high_422"   , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_422     }, INT_MIN, INT_MAX, ED, "profile" },
-        { "high_444"   , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_444     }, INT_MIN, INT_MAX, ED, "profile" },
+        { "baseline"   , NULL, 0,      AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_BASELINE     }, INT_MIN, INT_MAX, ED, "profile" },
+        { "main"       , NULL, 0,      AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_MAIN         }, INT_MIN, INT_MAX, ED, "profile" },
+        { "extended"   , NULL, 0,      AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_EXTENDED     }, INT_MIN, INT_MAX, ED, "profile" },
+        { "high"       , NULL, 0,      AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH         }, INT_MIN, INT_MAX, ED, "profile" },
+        { "high_10"    , NULL, 0,      AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_10      }, INT_MIN, INT_MAX, ED, "profile" },
+        { "high_422"   , NULL, 0,      AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_422     }, INT_MIN, INT_MAX, ED, "profile" },
+        { "high_444"   , NULL, 0,      AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_444     }, INT_MIN, INT_MAX, ED, "profile" },
 
-        { "coder"      , "1 - cabac, 0 - cavlc"                            , OFFSET(coder)           , AV_OPT_TYPE_INT   , { .i64 =-1 }, -1, 1, ED },
-        { "default"    , NULL                                              , 0                       , AV_OPT_TYPE_CONST , { .i64 =-1 },  INT_MIN, INT_MAX, ED, "coder" },
-        { "cavlc"      , NULL                                              , 0                       , AV_OPT_TYPE_CONST , { .i64 = 0 },  INT_MIN, INT_MAX, ED, "coder" },
-        { "cabac"      , NULL                                              , 0                       , AV_OPT_TYPE_CONST , { .i64 = 1 },  INT_MIN, INT_MAX, ED, "coder" },
+        { "a53cc"      , "Use A53 Closed Captions", OFFSET(base.a53_cc), AV_OPT_TYPE_BOOL , { .i64 = 1 },  0, 1, ED },
+        { "coder"      , "1 - cabac, 0 - cavlc"   , OFFSET(coder) , AV_OPT_TYPE_INT  , { .i64 =-1 }, -1, 1, ED },
+        { "default"    , NULL                     , 0             , AV_OPT_TYPE_CONST, { .i64 =-1 }, INT_MIN, INT_MAX, ED, "coder" },
+        { "cavlc"      , NULL                     , 0             , AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, ED, "coder" },
+        { "cabac"      , NULL                     , 0             , AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, ED, "coder" },
 
         { NULL }
 };
@@ -96,7 +100,7 @@ AVCodec ff_avc_omx_encoder = {
         .id               = AV_CODEC_ID_H264,
         .priv_data_size   = sizeof(OMXAVCEncComponentContext),
         .init             = omx_cmpnt_encoder_init,
-        .close            = omx_cmpnt_end,
+        .close            = omx_cmpnt_codec_end,
         .send_frame       = omx_send_frame,
         .receive_packet   = omx_receive_packet,
         .capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,

@@ -1,6 +1,6 @@
 /*
  * OMX Common
- * Copyright (c) 2020 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2021 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -54,8 +54,6 @@
 // by OMX spec, and is between IL Core and components. Right now it looks like we don't need IL Core, we could use
 // component directly as soon as it loaded. So, let's start with it. Let's think that there is kinda "IL Core", but
 // it's very thin and is spreaded over this file.
-// Anyway, TODO : implement decent IL Core
-
 
 static av_cold int populate_core_methods(OMXCoreLibrary *lib)
 {
@@ -99,61 +97,70 @@ static av_cold int load_core_library(OMXCoreLibrary *l, void *logctx,
     return 0;
 }
 
-static av_cold int get_port_idx(AVCodecContext *avctx)
+static av_cold int get_port_idx(OMXComponentContext *s)
 {
-    OMXComponentContext *s = avctx->priv_data;
     int ret = 0;
 
-    OMX_PORT_PARAM_TYPE port_params;
-    INIT_STRUCT(port_params);
+    OMX_INDEXTYPE port_types[] = {OMX_IndexParamAudioInit, OMX_IndexParamVideoInit, OMX_IndexParamImageInit, OMX_IndexParamOtherInit};
 
-    if(s->avctx->codec_type == AVMEDIA_TYPE_VIDEO)
-        ret = OMX_GetParameter(s->component, OMX_IndexParamVideoInit, &port_params);
-    else
-        ret = OMX_GetParameter(s->component, OMX_IndexParamAudioInit, &port_params);
+    int port_idx = 0;
 
-    OMX_ERROR_CHECK(ret, avctx);
+    for (int t=0; t<sizeof(port_types)/sizeof(port_types[0]); t++) {
+        OMX_PORT_PARAM_TYPE port_params;
+        INIT_STRUCT(port_params);
 
-    if (port_params.nPorts != 2) {
-        av_log(avctx, AV_LOG_ERROR, "OMX component has %li ports intead of two.\n", port_params.nPorts);
-        return AVERROR_UNKNOWN;
+        ret = OMX_GetParameter(s->component, port_types[t], &port_params);
+        OMX_ERROR_CHECK(ret, s->avctx);
+
+        s->nPorts[t] = port_params.nPorts;
+        s->nStartPortNumber[t] = port_params.nStartPortNumber;
+
+        for (int i = 0; i < s->nPorts[t]; i++) {
+            OMX_PARAM_PORTDEFINITIONTYPE port_def;
+
+            pthread_mutex_lock(&s->buffers_mutex[port_idx]);
+
+            INIT_STRUCT(port_def);
+            port_def.nPortIndex = s->nStartPortNumber[t] + i;
+            OMX_GetParameter(s->component, OMX_IndexParamPortDefinition, &port_def);
+
+            s->port_idx[port_idx] = port_def.nPortIndex;
+            s->port_out[port_idx] = port_def.eDir == OMX_DirOutput;
+
+            pthread_mutex_unlock(&s->buffers_mutex[port_idx]);
+
+            port_idx++;
+        }
     }
 
-    s->nPorts = port_params.nPorts;
-    s->nStartPortNumber = port_params.nStartPortNumber;
-
-    for (int i = 0; i < s->nPorts; i++) {
-        OMX_PARAM_PORTDEFINITIONTYPE port_def;
-
-        pthread_mutex_lock(&s->buffers_mutex[i]);
-
-        INIT_STRUCT(port_def);
-        port_def.nPortIndex = s->nStartPortNumber + i;
-        OMX_GetParameter(s->component, OMX_IndexParamPortDefinition, &port_def);
-
-        if (port_def.eDir == OMX_DirInput)
-            s->in_port_idx  = i;
-        else
-            s->out_port_idx = i;
-
-        pthread_mutex_unlock(&s->buffers_mutex[i]);
-    }
+    s->port_num = port_idx;
 
     return ret;
 }
 
-static av_cold int allocate_buffers(AVCodecContext *avctx, int only_output)
+static int rev_port_idx(struct OMXComponentContext *s, int omx_port_idx)
 {
-    OMXComponentContext *s = avctx->priv_data;
+    for (int i=0; i<s->port_num; i++)
+        if (s->port_idx[i] == omx_port_idx)
+            return i;
+
+    return -1;
+}
+
+static av_cold int allocate_buffers(OMXComponentContext *s, int only_output)
+{
     int ret = 0;
 
-    for (int i = (only_output ? s->out_port_idx : 0); i < (only_output ? s->out_port_idx+1 : s->nPorts); i++) {
+    for (int i = 0; i < s->port_num; i++) {
+        if (only_output && !s->port_out[i])
+            continue;
+
         OMX_PARAM_PORTDEFINITIONTYPE port_def;
 
         pthread_mutex_lock(&s->buffers_mutex[i]);
 
         INIT_STRUCT(port_def);
-        port_def.nPortIndex = s->nStartPortNumber + i;
+        port_def.nPortIndex = s->port_idx[i];
         ret = OMX_GetParameter(s->component, OMX_IndexParamPortDefinition, &port_def);
         if (ret != OMX_ErrorNone) {
             pthread_mutex_unlock(&s->buffers_mutex[i]);
@@ -161,7 +168,7 @@ static av_cold int allocate_buffers(AVCodecContext *avctx, int only_output)
         }
 
         s->buffers_n[i] = port_def.nBufferCountMin;
-        if (!only_output)
+        if (!only_output) // TODO: possible bug if nBufferCountMin was changed.
             s->buffers[i] = (OMX_BUFFERHEADERTYPE**)malloc(s->buffers_n[i] * sizeof(s->buffers[0][0]));
 
         for (int j=0; j < s->buffers_n[i]; j++) {
@@ -177,18 +184,18 @@ static av_cold int allocate_buffers(AVCodecContext *avctx, int only_output)
     return ret;
 }
 
-static av_cold int free_buffers(AVCodecContext *avctx, int only_output)
+static av_cold int free_buffers(OMXComponentContext *s, int only_output)
 {
-    OMXComponentContext *s = avctx->priv_data;
+    for (int i = 0; i < s->port_num; i++) {
+        if (only_output && !s->port_out[i])
+            continue;
 
-    for (int i = (only_output ? s->out_port_idx : 0); i < (only_output ? s->out_port_idx+1 : s->nPorts); i++) {
-        OMX_U32 port_idx = s->nStartPortNumber + i;
+        OMX_U32 port_idx = s->port_idx[i];
 
         pthread_mutex_lock(&s->buffers_mutex[i]);
 
-        for (int j=0; j < s->buffers_n[i]; j++) {
+        for (int j=0; j < s->buffers_n[i]; j++)
             OMX_FreeBuffer(s->component, port_idx, s->buffers[i][j]);
-        }
 
         s->buffers_n[i] = 0;
 
@@ -279,9 +286,9 @@ static OMX_ERRORTYPE empty_buffer_done(OMX_HANDLETYPE component, OMX_PTR app_dat
 {
     OMXComponentContext *s = app_data;
 
-    OMX_U32 port_idx = buffer->nInputPortIndex - s->nStartPortNumber;
+    OMX_U32 port_idx = rev_port_idx(s, buffer->nInputPortIndex);
 
-    pthread_mutex_lock(&s->buffers_cond_mutex); // TODO : probably we could use single mutex istead of two
+    pthread_mutex_lock(&s->buffers_cond_mutex); // TODO : probably we could use single mutex instead of two
     pthread_mutex_lock(&s->buffers_mutex[port_idx]);
 
     s->buffers[port_idx][s->buffers_n[port_idx]++] = buffer;
@@ -299,7 +306,7 @@ static OMX_ERRORTYPE fill_buffer_done(OMX_HANDLETYPE component, OMX_PTR app_data
 {
     OMXComponentContext *s = app_data;
 
-    OMX_U32 port_idx = buffer->nOutputPortIndex - s->nStartPortNumber;
+    OMX_U32 port_idx = rev_port_idx(s, buffer->nOutputPortIndex);
 
     pthread_mutex_lock(&s->state_mutex);
     if (s->port_disabling && s->port_disable_command_was_send) {
@@ -309,7 +316,7 @@ static OMX_ERRORTYPE fill_buffer_done(OMX_HANDLETYPE component, OMX_PTR app_data
         return OMX_ErrorNone;
     }
 
-    pthread_mutex_lock(&s->buffers_cond_mutex); // TODO : probably we could use single mutex istead of two
+    pthread_mutex_lock(&s->buffers_cond_mutex); // TODO : probably we could use single mutex instead of two
     pthread_mutex_lock(&s->buffers_mutex[port_idx]);
 
     s->buffers[port_idx][s->buffers_n[port_idx]++] = buffer;
@@ -347,36 +354,33 @@ static av_cold int wait_for_switch(OMXComponentContext *s, OMX_STATETYPE st)
     return ret;
 }
 
-av_cold int omx_cmpnt_init(AVCodecContext *avctx)
+av_cold int omx_cmpnt_init(OMXComponentContext *s)
 {
     int ret = 0;
-    OMXComponentContext *s = avctx->priv_data;
 
-    av_log(avctx, AV_LOG_TRACE, "OMX component init\n");
-
-    s->avctx = avctx;
+    av_log(s->avctx, AV_LOG_TRACE, "OMX component init\n");
 
     pthread_mutex_lock(&s->deiniting_mutex);
     s->deiniting = OMX_FALSE;
     pthread_mutex_unlock(&s->deiniting_mutex);
 
-    ret = load_core_library(&s->core, avctx, s->core_libname);
+    ret = load_core_library(&s->core, s->avctx, s->core_libname);
 
     if (ret !=0)
         return ret;
 
     ret = s->core.OMX_Init();
-    OMX_ERROR_CHECK(ret, avctx)
+    OMX_ERROR_CHECK(ret, s->avctx)
 
     ret = s->core.OMX_GetHandle(&s->component, s->component_name, s, &omx_callbacks);
-    OMX_ERROR_CHECK(ret, avctx)
+    OMX_ERROR_CHECK(ret, s->avctx)
 
     if (!s->component) {
-        av_log(avctx, AV_LOG_ERROR, "Component cannot be created\n");
+        av_log(s->avctx, AV_LOG_ERROR, "OMX component cannot be created\n");
         return AVERROR_UNKNOWN;
     }
 
-    get_port_idx(avctx);
+    get_port_idx(s);
 
     s->state = OMX_StateLoaded;
 
@@ -385,24 +389,23 @@ av_cold int omx_cmpnt_init(AVCodecContext *avctx)
     return 0;
 }
 
-av_cold int omx_cmpnt_start(AVCodecContext *avctx)
+av_cold int omx_cmpnt_start(OMXComponentContext *s)
 {
     int ret = 0;
-    OMXComponentContext *s = avctx->priv_data;
 
-    av_log(avctx, AV_LOG_TRACE, "OMX component start\n");
+    av_log(s->avctx, AV_LOG_TRACE, "OMX component start\n");
 
     OMX_SendCommand(s->component, OMX_CommandStateSet, OMX_StateIdle, NULL);
 
-    ret = allocate_buffers(avctx, OMX_FALSE);
+    ret = allocate_buffers(s, OMX_FALSE);
     if (ret) {
-        av_log(avctx, AV_LOG_ERROR, "Component cannot allocate buffers\n");
+        av_log(s->avctx, AV_LOG_ERROR, "OMX component cannot allocate buffers\n");
         return AVERROR_UNKNOWN;
     }
 
     ret = wait_for_switch(s, OMX_StateIdle);
     if (ret) {
-        av_log(avctx, AV_LOG_ERROR, "Component cannot switch to Idle state\n");
+        av_log(s->avctx, AV_LOG_ERROR, "OMX component cannot switch to Idle state\n");
         return AVERROR_UNKNOWN;
     }
 
@@ -410,20 +413,18 @@ av_cold int omx_cmpnt_start(AVCodecContext *avctx)
 
     ret = wait_for_switch(s, OMX_StateExecuting);
     if (ret) {
-        av_log(avctx, AV_LOG_ERROR, "Component cannot switch to Executing state\n");
+        av_log(s->avctx, AV_LOG_ERROR, "OMX component cannot switch to Executing state\n");
         return AVERROR_UNKNOWN;
     }
 
     return 0;
 }
 
-av_cold int omx_cmpnt_end(AVCodecContext *avctx)
+av_cold int omx_cmpnt_end(OMXComponentContext *s)
 {
-    OMXComponentContext *s = avctx->priv_data;
-
     int ret = 0;
 
-    av_log(avctx, AV_LOG_TRACE, "OMX component end\n");
+    av_log(s->avctx, AV_LOG_TRACE, "OMX component end\n");
 
     pthread_mutex_lock(&s->deiniting_mutex);
     s->deiniting = OMX_TRUE;
@@ -434,7 +435,7 @@ av_cold int omx_cmpnt_end(AVCodecContext *avctx)
     ret = wait_for_switch(s, OMX_StateIdle);
 
     OMX_SendCommand(s->component, OMX_CommandStateSet, OMX_StateLoaded, NULL);
-    ret = free_buffers(avctx, OMX_FALSE);
+    ret = free_buffers(s, OMX_FALSE);
     ret = wait_for_switch(s, OMX_StateLoaded);
 
     if (s->component)
@@ -442,10 +443,16 @@ av_cold int omx_cmpnt_end(AVCodecContext *avctx)
 
     s->core.OMX_Deinit();
 
-    av_free(avctx->extradata);
-    avctx->extradata = NULL;
-
     return ret;
+}
+
+int omx_port_idx(struct OMXComponentContext* s, int output)
+{
+    for (int i=0; i<s->port_num; i++)
+        if (output == s->port_out[i])
+            return i;
+
+    return -1;
 }
 
 #define OFFSET(x) offsetof(OMXComponentContext, x)
@@ -463,12 +470,14 @@ static OMX_BUFFERHEADERTYPE* omx_get_output_buffer(OMXComponentContext *s)
 {
     OMX_BUFFERHEADERTYPE* buf = NULL;
 
-    while (s->buffers_n[s->out_port_idx]) {
-        s->buffers_n[s->out_port_idx]--;
+    int out_port_idx = omx_port_idx(s, OMX_TRUE); // TODO: all components we have have only one output port
 
-        buf = s->buffers[s->out_port_idx][0];
-        memmove(&s->buffers[s->out_port_idx][0], &s->buffers[s->out_port_idx][1],
-                sizeof(s->buffers[s->out_port_idx][0]) * s->buffers_n[s->out_port_idx]);
+    while (s->buffers_n[out_port_idx]) {
+        s->buffers_n[out_port_idx]--;
+
+        buf = s->buffers[out_port_idx][0];
+        memmove(&s->buffers[out_port_idx][0], &s->buffers[out_port_idx][1],
+                sizeof(s->buffers[out_port_idx][0]) * s->buffers_n[out_port_idx]);
 
         if (buf->nFilledLen == 0 && !(buf->nFlags & OMX_BUFFERFLAG_EOS)) { // Buffer is empty, so let component fill it
 //            if (s->port_disabling && s->port_disable_command_was_send) {
@@ -476,8 +485,8 @@ static OMX_BUFFERHEADERTYPE* omx_get_output_buffer(OMXComponentContext *s)
 //                return NULL;
 //            } else
             if (OMX_FillThisBuffer(s->component, buf) == OMX_ErrorIncorrectStateOperation) {  // TODO : very fragile. And what if another error occurs?
-                s->buffers[s->out_port_idx][s->buffers_n[s->out_port_idx]] = buf;
-                s->buffers_n[s->out_port_idx]++;
+                s->buffers[out_port_idx][s->buffers_n[out_port_idx]] = buf;
+                s->buffers_n[out_port_idx]++;
                 return NULL;
             }
 
@@ -493,11 +502,34 @@ OMX_BUFFERHEADERTYPE* omx_pick_output_buffer(OMXComponentContext *s)
 {
     OMX_BUFFERHEADERTYPE* buf = NULL;
 
-    pthread_mutex_lock(&s->buffers_mutex[s->out_port_idx]);
+    int out_port_idx = omx_port_idx(s, 1); // TODO: all components we have have only one output port
+
+    pthread_mutex_lock(&s->buffers_mutex[out_port_idx]);
 
     buf = omx_get_output_buffer(s);
 
-    pthread_mutex_unlock(&s->buffers_mutex[s->out_port_idx]);
+    pthread_mutex_unlock(&s->buffers_mutex[out_port_idx]);
+
+    return buf;
+}
+
+OMX_BUFFERHEADERTYPE* omx_pick_input_buffer_n(OMXComponentContext *s, int port_num)
+{
+    OMX_BUFFERHEADERTYPE* buf = NULL;
+
+    pthread_mutex_lock(&s->buffers_mutex[port_num]);
+
+    if (s->buffers_n[port_num]) {
+        s->buffers_n[port_num]--;
+
+        buf = s->buffers[port_num][s->buffers_n[port_num]];
+
+        pthread_mutex_unlock(&s->buffers_mutex[port_num]);
+
+        return buf;
+    } else {
+        pthread_mutex_unlock(&s->buffers_mutex[port_num]);
+    }
 
     return buf;
 }
@@ -506,39 +538,48 @@ OMX_BUFFERHEADERTYPE* omx_pick_input_buffer(OMXComponentContext *s)
 {
     OMX_BUFFERHEADERTYPE* buf = NULL;
 
-    pthread_mutex_lock(&s->buffers_mutex[s->in_port_idx]);
+    for (int i = 0; i < s->port_num; i++) {
+        if (s->port_out[i])
+            continue;
 
-    if (s->buffers_n[s->in_port_idx]) {
-        s->buffers_n[s->in_port_idx]--;
+        pthread_mutex_lock(&s->buffers_mutex[i]);
 
-        buf = s->buffers[s->in_port_idx][s->buffers_n[s->in_port_idx]];
+        if (s->buffers_n[i]) {
+            s->buffers_n[i]--;
+
+            buf = s->buffers[i][s->buffers_n[i]];
+
+            pthread_mutex_unlock(&s->buffers_mutex[i]);
+
+            return buf;
+        } else {
+            pthread_mutex_unlock(&s->buffers_mutex[i]);
+        }
     }
-
-    pthread_mutex_unlock(&s->buffers_mutex[s->in_port_idx]);
 
     return buf;
 }
 
 static void omx_send_port_commands(OMXComponentContext *s)
 {
-    // TODO : What a mess.
+    int out_port_idx = s->port_idx[omx_port_idx(s, 1)];
     pthread_mutex_lock(&s->state_mutex);
     if (s->port_disabling && !s->port_disable_command_was_send) {
         pthread_mutex_unlock(&s->state_mutex);
-        OMX_SendCommand(s->component, OMX_CommandPortDisable, s->nStartPortNumber + s->out_port_idx, 0);
+        OMX_SendCommand(s->component, OMX_CommandPortDisable, out_port_idx, 0);
         pthread_mutex_lock(&s->state_mutex);
         s->port_disable_command_was_send = OMX_TRUE;
         pthread_mutex_unlock(&s->state_mutex);
-        free_buffers(s->avctx, OMX_TRUE);
+        free_buffers(s, OMX_TRUE);
         pthread_mutex_lock(&s->state_mutex);
     }
     if (s->port_enabling && !s->port_enable_command_was_send) {
         pthread_mutex_unlock(&s->state_mutex);
-        OMX_SendCommand(s->component, OMX_CommandPortEnable, s->nStartPortNumber + s->out_port_idx, 0);
+        OMX_SendCommand(s->component, OMX_CommandPortEnable, out_port_idx, 0);
         pthread_mutex_lock(&s->state_mutex);
         s->port_enable_command_was_send = OMX_TRUE;
         pthread_mutex_unlock(&s->state_mutex);
-        allocate_buffers(s->avctx, OMX_TRUE);
+        allocate_buffers(s, OMX_TRUE);
         pthread_mutex_lock(&s->state_mutex);
     }
     pthread_mutex_unlock(&s->state_mutex);
@@ -548,7 +589,7 @@ void omx_wait_any_buffer(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE** out_buf, 
 {
     OMXComponentContext *s = avctx->priv_data;
 
-    do { // TODO aaaaaaaargh
+    do {
         omx_send_port_commands(s);
 
         pthread_mutex_lock(&s->buffers_cond_mutex);
@@ -596,7 +637,25 @@ OMX_BUFFERHEADERTYPE* omx_wait_output_buffer(OMXComponentContext *s)
     return buf;
 }
 
-OMX_BUFFERHEADERTYPE* omx_wait_input_buffer(OMXComponentContext *s) // TODO : there are several copypasted wait* and pick* functions
+OMX_BUFFERHEADERTYPE* omx_wait_input_buffer_n(OMXComponentContext *s, int num_port)
+{
+    OMX_BUFFERHEADERTYPE* buf = NULL;
+
+    pthread_mutex_lock(&s->buffers_cond_mutex);
+
+    buf = omx_pick_input_buffer_n(s, num_port);
+
+    while (!buf) {
+        pthread_cond_wait(&s->buffers_cond, &s->buffers_cond_mutex);
+
+        buf = omx_pick_input_buffer_n(s, num_port);
+    };
+    pthread_mutex_unlock(&s->buffers_cond_mutex);
+
+    return buf;
+}
+
+OMX_BUFFERHEADERTYPE* omx_wait_input_buffer(OMXComponentContext *s)
 {
     OMX_BUFFERHEADERTYPE* buf = NULL;
 
@@ -614,24 +673,13 @@ OMX_BUFFERHEADERTYPE* omx_wait_input_buffer(OMXComponentContext *s) // TODO : th
     return buf;
 }
 
-int omx_input_buffers_n(OMXComponentContext *s)
+void  omx_put_input_buffer(OMXComponentContext *s, OMX_BUFFERHEADERTYPE * buf)
 {
-    int n = 0;
+    int in_port_idx = rev_port_idx(s, buf->nInputPortIndex);
 
-    pthread_mutex_lock(&s->buffers_mutex[s->in_port_idx]);
+    pthread_mutex_lock(&s->buffers_mutex[in_port_idx]);
 
-    n = s->buffers_n[s->in_port_idx];
+    s->buffers[in_port_idx][s->buffers_n[in_port_idx]++] = buf;
 
-    pthread_mutex_unlock(&s->buffers_mutex[s->in_port_idx]);
-
-    return n;
-}
-
-void  omx_put_input_buffer(OMXComponentContext *s,OMX_BUFFERHEADERTYPE * buf)
-{
-    pthread_mutex_lock(&s->buffers_mutex[s->in_port_idx]);
-
-    s->buffers[s->in_port_idx][s->buffers_n[s->in_port_idx]++] = buf;
-
-    pthread_mutex_unlock(&s->buffers_mutex[s->in_port_idx]);
+    pthread_mutex_unlock(&s->buffers_mutex[in_port_idx]);
 }

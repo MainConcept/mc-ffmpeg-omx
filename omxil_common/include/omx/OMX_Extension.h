@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2021 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -100,5 +100,6 @@ typedef struct TIMESTAMP_PARAM {
   * Custom ExtraData id
   **/
 #define OMX_ExtraDataDTS VENDOR_EXTRADATATYPE(0)   /**< reference: OMX_OTHER_EXTRADATATYPE */
+#define OMX_ExtraDataA53CC VENDOR_EXTRADATATYPE(1) /**< reference: OMX_OTHER_EXTRADATATYPE */
 
 #endif // OMXIL_COMMON_INCLUDE_OMX_OMX_EXTENSION_H

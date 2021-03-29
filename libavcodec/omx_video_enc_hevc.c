@@ -1,6 +1,6 @@
 /*
  * OMX Video encoder
- * Copyright (c) 2020 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2021 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,21 +26,24 @@
 
 static av_cold int omx_cmpnt_encoder_init(AVCodecContext *avctx)
 {
-    OMXHEVCEncComponentContext *s = avctx->priv_data;
+    OMXHEVCEncComponentContext *s_hevc = avctx->priv_data;
+    OMXComponentContext *s = &s_hevc->base;
 
-    int ret = omx_cmpnt_init(avctx);
+    s->avctx = avctx;
+
+    int ret = omx_cmpnt_init(s);
     if (ret) return ret;
 
     ret = omx_set_pic_param(avctx);
     if (ret) return ret;
 
-    ret = omx_set_avc_param(avctx, s->level);
+    ret = omx_set_avc_param(avctx, s_hevc->level);
     if (ret) return ret;
 
     ret = omx_set_commandline(avctx);
     if (ret) return ret;
 
-    ret = omx_cmpnt_start(avctx);
+    ret = omx_cmpnt_start(s);
     if (ret) return ret;
 
     return 0;
@@ -62,8 +65,8 @@ const AVOption hevc_enc_omx_options[] = {
         { "main_10"    , NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_10      }, INT_MIN, INT_MAX, ED, "profile" },
         { "main_422_10", NULL, 0, AV_OPT_TYPE_CONST , { .i64 = FF_PROFILE_H264_HIGH_422     }, INT_MIN, INT_MAX, ED, "profile" },
 
+        { "a53cc"      , "Use A53 Closed Captions", OFFSET(base.a53_cc), AV_OPT_TYPE_BOOL , { .i64 = 1 },  0, 1, ED },
         { NULL }
-
 };
 
 static const AVCodecDefault hevc_enc_omx_defaults[] = {
@@ -88,7 +91,7 @@ AVCodec ff_hevc_omx_encoder = {
         .id               = AV_CODEC_ID_H265,
         .priv_data_size   = sizeof(OMXHEVCEncComponentContext),
         .init             = omx_cmpnt_encoder_init,
-        .close            = omx_cmpnt_end,
+        .close            = omx_cmpnt_codec_end,
         .send_frame       = omx_send_frame,
         .receive_packet   = omx_receive_packet,
         .capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,

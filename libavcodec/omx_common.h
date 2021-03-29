@@ -1,6 +1,6 @@
 /*
  * OMX Common
- * Copyright (c) 2020 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2021 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -81,9 +81,11 @@ typedef struct OMXCoreLibrary {
     OMX_ERRORTYPE (*OMX_FreeHandle)(OMX_HANDLETYPE);
 } OMXCoreLibrary;
 
+#define MAX_PORT_NUMBER 16
+
 typedef struct OMXComponentContext {
     const AVClass *class;
-    AVCodecContext *avctx;
+    void* avctx;
 
     char* core_libname;
     char* component_name;
@@ -100,18 +102,19 @@ typedef struct OMXComponentContext {
 
     OMX_STATETYPE state;
 
-    OMX_BUFFERHEADERTYPE** buffers[2];
-    OMX_U32 buffers_n[2];
+    OMX_BUFFERHEADERTYPE** buffers[MAX_PORT_NUMBER];
+    OMX_U32 buffers_n[MAX_PORT_NUMBER];
 
-    OMX_U32 nStartPortNumber;
-    OMX_U32 nPorts;
+    OMX_U32 nStartPortNumber[OMX_PortDomainOther+1];
+    OMX_U32 nPorts[OMX_PortDomainOther+1];
 
-    OMX_U32 out_port_idx;
-    OMX_U32 in_port_idx;
+    OMX_U32 port_idx[MAX_PORT_NUMBER];
+    OMX_U32 port_out[MAX_PORT_NUMBER];
+    OMX_U32 port_num;
 
-    pthread_mutex_t buffers_mutex[2];
+    pthread_mutex_t buffers_mutex[MAX_PORT_NUMBER];
     pthread_mutex_t buffers_cond_mutex;
-    pthread_cond_t  buffers_cond;//[2];
+    pthread_cond_t  buffers_cond;
 
     OMX_BOOL        eos_flag;
 
@@ -123,6 +126,7 @@ typedef struct OMXComponentContext {
     int             deiniting;
     pthread_mutex_t deiniting_mutex;
 
+    int             a53_cc;
     void*           codec_config;
 } OMXComponentContext;
 
@@ -134,15 +138,22 @@ typedef struct OMXComponentContext {
 extern const struct AVOption omx_options[];
 
 // Component life cycle
-av_cold int omx_cmpnt_init(AVCodecContext *avctx);
-av_cold int omx_cmpnt_start(AVCodecContext *avctx );
-av_cold int omx_cmpnt_end(AVCodecContext *avctx);
-av_cold int omx_cmpnt_parse_param(AVCodecContext *avctx);
+av_cold int omx_cmpnt_init(OMXComponentContext *s);
+av_cold int omx_cmpnt_start(OMXComponentContext *s);
+av_cold int omx_cmpnt_end(OMXComponentContext *s);
+//av_cold int omx_cmpnt_parse_param(AVCodecContext *avctx);
+
+// Helpers
+int omx_port_idx(struct OMXComponentContext* s, int output);
+int omx_out_port_idx(struct OMXComponentContext* s);
+int omx_in_port_idx(struct OMXComponentContext* s);
 
 // Buffer queue operations
 void omx_wait_any_buffer(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE** out_buf, OMX_BUFFERHEADERTYPE** in_buf);
 OMX_BUFFERHEADERTYPE* omx_wait_input_buffer(OMXComponentContext *s);
+OMX_BUFFERHEADERTYPE* omx_wait_input_buffer_n(OMXComponentContext *s, int port_num);
 OMX_BUFFERHEADERTYPE* omx_pick_input_buffer(OMXComponentContext *s);
+OMX_BUFFERHEADERTYPE* omx_pick_input_buffer_n(OMXComponentContext *s, int port_num);
 OMX_BUFFERHEADERTYPE* omx_wait_output_buffer(OMXComponentContext *s);
 OMX_BUFFERHEADERTYPE* omx_pick_output_buffer(OMXComponentContext *s);
 int omx_input_buffers_n(OMXComponentContext *s);

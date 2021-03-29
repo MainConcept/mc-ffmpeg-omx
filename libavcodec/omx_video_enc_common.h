@@ -1,6 +1,6 @@
 /*
  * OMX Video encoder
- * Copyright (c) 2020 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2021 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -55,6 +55,8 @@
 #define MAX_ARG_STRLEN 32000
 
 int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx);
+uint64_t get_ext_pos(uint8_t* p, uint64_t offset);
+int fill_extradata_sei_buf(OMX_BUFFERHEADERTYPE* buf, uint8_t* sei_data, uint64_t sei_size);
 
 int frame_to_buffer(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFrame *fr);
 
@@ -73,5 +75,6 @@ int profile_to_omx(int ten_bit, int profile);
 int level_to_omx(const char* level);
 int omx_set_avc_param(AVCodecContext *avctx, const char* level);
 int omx_set_commandline(AVCodecContext *avctx);
+int omx_cmpnt_codec_end(AVCodecContext *avctx);
 
 #endif // AVCODEC_OMX_VIDEO_ENC_COMMON_H

@@ -1,6 +1,6 @@
 /*
  * OMX Video encoder
- * Copyright (c) 2020 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2021 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,8 +26,10 @@
 
 #define MAX(x, y) ((x)>(y) ? (x) : (y))
 
-int frame_to_buffer(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFrame *fr)
+static int frame_to_buffer_video(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFrame *fr)
 {
+    OMXComponentContext *s = avctx->priv_data;
+
     const AVPixFmtDescriptor * pix_desc = av_pix_fmt_desc_get((enum AVPixelFormat)fr->format);
     size_t luma_width = 0;
     size_t chroma_width = 0;
@@ -76,12 +78,76 @@ int frame_to_buffer(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFr
         buf->nFlags |= OMX_BUFFERFLAG_SYNCFRAME;
 
     //    printf("buf_ts %i, frame pts %i\n", from_omx_ticks(buf->nTimeStamp), fr->pts);
+    if (s->a53_cc) {
+        void* sei_data;
+        size_t sei_size = 0;
+        int ret = ff_alloc_a53_sei(fr, 0, &sei_data, &sei_size);
+        if(sei_size)
+            fill_extradata_sei_buf(buf, (uint8_t*)sei_data, sei_size);
+    }
+
+    return 0;
+}
+
+uint64_t get_ext_pos(uint8_t* p, uint64_t offset) {
+    uint64_t new_offset = (offset + 0x03L) & ~0x03L;
+    uint64_t padding = new_offset - offset;
+
+    memset(p + offset, 0, padding);
+    return new_offset;
+}
+
+int fill_extradata_sei_buf(OMX_BUFFERHEADERTYPE* buf, uint8_t* sei_data, uint64_t sei_size)
+{
+    uint64_t offset = get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
+
+    OMX_OTHER_EXTRADATATYPE* seicc_ext = buf->pBuffer + offset;
+    INIT_STRUCT(*seicc_ext);
+
+    seicc_ext->nSize += sei_size;
+    seicc_ext->nDataSize = sei_size;
+    seicc_ext->eType = OMX_ExtraDataA53CC;
+
+    memcpy(seicc_ext->data, sei_data, sei_size);
+
+    offset += get_ext_pos(buf->pBuffer + offset, seicc_ext->nSize);
+
+    OMX_OTHER_EXTRADATATYPE last_empty_extra;
+    INIT_STRUCT(last_empty_extra);
+    last_empty_extra.eType = OMX_ExtraDataNone;
+
+    memcpy(buf->pBuffer + offset, (uint8_t*)&last_empty_extra, last_empty_extra.nSize);
+    buf->nFlags |= OMX_BUFFERFLAG_EXTRADATA;
+
+    // if (buf->nAllocLen - (offset + sei_data->size) > 0) {}
+    // else {/*AVLOG?*/}
+    return 0;
+}
+
+static int frame_to_buffer_audio(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFrame *fr)
+{
+    int new_data_size = fr->nb_samples * fr->channels * av_get_bytes_per_sample(fr->format);
+    memcpy(buf->pBuffer + buf->nOffset, fr->extended_data[0], new_data_size);
+
+#ifdef DUMP_INPUT_DATA
+    static FILE* out = NULL;
+
+    if (!out)
+        out = fopen("file.pcm", "wb");
+
+    fwrite(buf->pBuffer + buf->nOffset, 1, new_data_size, out);
+#endif // #ifdef DUMP_INPUT_DATA
+
+    buf->nTimeStamp = to_omx_ticks(fr->pts * 1000000 * avctx->time_base.num / avctx->time_base.den);//TODO: check it
+    buf->nFilledLen = new_data_size;
 
     return 0;
 }
 
 int omx_send_frame(AVCodecContext *avctx, const AVFrame *frame)
 {
+    int ret = 0;
+
     OMXComponentContext *s = avctx->priv_data;
 
     /*    // This wait shouldn't block. See explanation in omx_receive_packet()
@@ -97,25 +163,21 @@ int omx_send_frame(AVCodecContext *avctx, const AVFrame *frame)
 
     if (!frame) { // TODO : Stop encoding or flush flag
         //av_log(avctx, AV_LOG_INFO, "Empty input frame\n");
-        buf->nFlags |= OMX_BUFFERFLAG_EOS;
+        buf->nFlags = OMX_BUFFERFLAG_EOS;
         s->eos_flag = OMX_TRUE;
     } else {
-        int ret = frame_to_buffer(avctx, buf, frame);
-        if (ret < 0) {
-            OMX_EmptyThisBuffer(s->component, buf);
-            return ret;
-        }
+        ret = avctx->codec_type == AVMEDIA_TYPE_VIDEO ? frame_to_buffer_video(avctx, buf, frame) : frame_to_buffer_audio(avctx, buf, frame);
     }
 
     OMX_EmptyThisBuffer(s->component, buf);
 
-    return 0;
+    return ret;
 }
-
 
 int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx)
 {
-    uint64_t offset = (buf->nOffset + buf->nFilledLen + 0x03L) & ~0x03L;
+    int64_t offset = (buf->nOffset + buf->nFilledLen + 0x03L) & ~0x03L;
+
     if (buf->nFlags & OMX_BUFFERFLAG_EXTRADATA && buf->nAllocLen - (offset + sizeof(OMX_OTHER_EXTRADATATYPE)) > 0) {
         OMX_OTHER_EXTRADATATYPE *pExtra = (OMX_OTHER_EXTRADATATYPE *)(buf->pBuffer + offset);
         while (pExtra->eType != OMX_ExtraDataNone && buf->nAllocLen - (offset + pExtra->nSize) > 0)
@@ -167,14 +229,16 @@ int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHEADERTYP
         const int64_t getting_pts =
                 (from_omx_ticks(buf->nTimeStamp) * (int64_t)avctx->time_base.den + 1000000LL * (int64_t)avctx->time_base.num / 2) /
                         (1000000LL * avctx->time_base.num);
-        int64_t getting_dts = 0;
+        int64_t getting_dts = AV_NOPTS_VALUE;
 
         int64_t dts_omx = AV_NOPTS_VALUE;
         parse_extradata(buf, &dts_omx);
 
-        getting_dts = (llabs(dts_omx) * (int64_t)avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
-                                    (1000000LL * avctx->time_base.num);
-        getting_dts = dts_omx > 0 ? getting_dts : -getting_dts;
+        if (dts_omx != AV_NOPTS_VALUE) {
+            getting_dts = (llabs(dts_omx) * (int64_t) avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
+                          (1000000LL * avctx->time_base.num);
+            getting_dts = dts_omx > 0 ? getting_dts : -getting_dts;
+        }
 
         avpkt->pts = getting_pts;
         avpkt->dts = getting_dts;
@@ -221,7 +285,7 @@ int omx_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
 
     if (s->eos_flag) {
         if (in_buf) { // Send buffer back, if eos flag is set, we won't have anything to proceed.
-            in_buf->nFlags |= OMX_BUFFERFLAG_EOS;
+            in_buf->nFlags = OMX_BUFFERFLAG_EOS;
             OMX_EmptyThisBuffer(s->component, in_buf);
             in_buf = NULL;
         }
@@ -243,8 +307,8 @@ int omx_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
         ret = convert_buffer(avctx, &out_buf, avpkt, &buffer_eos_flag);
 
 // Idea is: If input stream was ended, but there are no output frames yet (stream is short, and encoder buffer is bigger than stream) there is a chance that
-// the first buffer we received while flushing is codec config. But it has no payload. So we have to wait for the next buffer (and we expect it will be payload buffer, otherwise it won't work). But we can't
-// wait for output payload buffer when stream wasn't ended because encoder could send codec config before any input frames were consumed.
+// the first buffer we received while flushing is codec config. But it has no payload. So we have to wait for the next buffer (and we expect it will be payload buffer,
+// otherwise it won't work). But we can't wait for output payload buffer when stream wasn't ended because encoder could send codec config before any input frames were consumed.
         if (avpkt->size == 0 && s->eos_flag) {
             out_buf = omx_wait_output_buffer(s); // TODO : If there is no out buffer we will stay in this loop forever.
 
@@ -317,7 +381,9 @@ av_cold int omx_set_pic_param(AVCodecContext *avctx)
     OMX_PARAM_PORTDEFINITIONTYPE port_definition;
     INIT_STRUCT(port_definition);
 
-    port_definition.nPortIndex = s->nStartPortNumber + s->in_port_idx;
+    int in_port_idx = s->port_idx[omx_port_idx(s, 0)];
+
+    port_definition.nPortIndex = in_port_idx;
 
     OMX_GetParameter(s->component, OMX_IndexParamPortDefinition, &port_definition);
 
@@ -406,14 +472,16 @@ av_cold int omx_set_avc_param(AVCodecContext *avctx, const char* level)
     INIT_STRUCT(bitrate);
     INIT_STRUCT(avc_param);
 
+    int out_port_idx = s->port_idx[omx_port_idx(s, 1)];
+
     bitrate.eControlRate = avctx->rc_min_rate == avctx->rc_max_rate ? OMX_Video_ControlRateConstant : OMX_Video_ControlRateVariable;
     bitrate.nTargetBitrate = avctx->bit_rate;
-    bitrate.nPortIndex = s->nStartPortNumber + s->out_port_idx;
+    bitrate.nPortIndex = out_port_idx;
 
     ret = OMX_SetParameter(s->component, OMX_IndexParamVideoBitrate, &bitrate);
     OMX_ERROR_CHECK(ret, avctx)
 
-    avc_param.nPortIndex = s->nStartPortNumber + s->out_port_idx;
+    avc_param.nPortIndex = out_port_idx;
     avc_param.nSliceHeaderSpacing = 0;
     avc_param.nPFrames = avctx->gop_size     >= 0 ? avctx->gop_size - 1 : UINT_MAX;
     avc_param.nBFrames = avctx->max_b_frames >= 0 ? avctx->max_b_frames : UINT_MAX;
@@ -474,6 +542,18 @@ av_cold int omx_set_commandline(AVCodecContext *avctx)
     OMX_ERROR_CHECK(ret, avctx)
 
     free(commandline);
+
+    return 0;
+}
+
+int omx_cmpnt_codec_end(AVCodecContext *avctx)
+{
+    OMXComponentContext *s = avctx->priv_data;
+
+    omx_cmpnt_end(s);
+
+    av_free(avctx->extradata);
+    avctx->extradata = NULL;
 
     return 0;
 }

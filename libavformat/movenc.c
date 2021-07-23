@@ -3,6 +3,7 @@
  * Copyright (c) 2003 Thomas Raivio
  * Copyright (c) 2004 Gildas Bazin <gbazin at videolan dot org>
  * Copyright (c) 2009 Baptiste Coudurier <baptiste dot coudurier at gmail dot com>
+ * Copyright (c) 2020 MainConcept GmbH or its affiliates.
  *
  * This file is part of FFmpeg.
  *
@@ -2444,8 +2445,117 @@ static int mov_write_dref_tag(AVIOContext *pb)
     return 28;
 }
 
-static int mov_preroll_write_stbl_atoms(AVIOContext *pb, MOVTrack *track)
+static int mov_preroll_write_atoms_aacxhe(AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track, int start, int end, int called_from_stbl)
 {
+    /* Count number of group entries */
+    int sbpg_entry_count = 1;       /* Value for entry_count variable in sbgp */
+    int current_group_index = 0;
+    int last_group_index = 0;
+    int sbgp_sample_count = 1;      /* Value for sample_count in sbgp */
+    int i = 0;
+    int write_sgpd = 1;
+    int write_sbgp = 1;
+
+    if(!(track->par->codec_id == AV_CODEC_ID_AAC && track->par->profile == FF_PROFILE_AAC_XHE)) {
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Check if there is at least one Independent Frame, that needs to be signaled */
+    for (i = start; i < end; i++) {
+        if (track->cluster[i].audioframe_flags & MOV_AUDIOFRAME_IF) {
+            current_group_index = 1;
+        } else {
+          current_group_index = 0;
+        }
+        if (current_group_index != last_group_index) {
+            sbpg_entry_count++;
+            last_group_index = current_group_index;
+        }
+    }
+
+    /* Check if there are samples belonging to the only allowed prol group.
+     * If not, we don't need to write the boxes, because all samples belong to "no group".
+     * If we are in fragmented mode, we always write the sgpd with prol once in the stbl. */
+    if (sbpg_entry_count <= 1 && !(mov->flags & FF_MOV_FLAG_FRAGMENT)) {
+        return 0;
+    }
+
+    if (!called_from_stbl && !(mov->flags & FF_MOV_FLAG_FRAGMENT)) {
+        av_log(NULL, AV_LOG_ERROR, "Can't use fragmented SampleGroup writing without fragments");
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Restrict writing of sgpd and sbgp. Default, both are always written. */
+    if (called_from_stbl) {
+        if (mov->flags & FF_MOV_FLAG_FRAGMENT) {
+            write_sgpd = 1;
+            write_sbgp = 0;
+        }
+    } else {
+        write_sgpd = 0;
+        write_sbgp = 1;
+    }
+
+    if (write_sgpd) {
+        /* Write sgpd tag */
+        avio_wb32(pb, 26); // size
+        ffio_wfourcc(pb, "sgpd");
+        avio_wb32(pb, 1 << 24); /* fullbox */
+        ffio_wfourcc(pb, "prol");
+        avio_wb32(pb, 2); /* default_length */
+        avio_wb32(pb, 1); /* entry_count */
+        avio_wb16(pb, track->par->roll_distance); /* Distance is always the same per trak */
+    }
+
+    av_log(NULL, AV_LOG_DEBUG, "movenc sample groups - no of groups: %d\n", 1);
+
+    if (!write_sbgp) {
+        return 0;
+    }
+
+    /* Write sbgp tag */
+    avio_wb32(pb, 20 + (sbpg_entry_count * 8)); /* size */
+    ffio_wfourcc(pb, "sbgp");
+    avio_wb32(pb, 0); /* fullbox */
+    ffio_wfourcc(pb, "prol");
+    avio_wb32(pb, sbpg_entry_count); /* entry_count */
+
+    current_group_index = 0;
+    last_group_index = 0;
+    sbgp_sample_count = 1;
+
+    for (i = start; i < end + 1; i++) {
+        if(i != track->entry ) {
+            if(track->cluster[i].audioframe_flags & MOV_AUDIOFRAME_IF) {
+                current_group_index = 1;
+            } else {
+                current_group_index = 0;
+            }
+        } else {
+            current_group_index = -1; /* last entry */
+        }
+
+        if(current_group_index != last_group_index) {
+            av_log(NULL, AV_LOG_DEBUG, "movenc rollgroups - group_index %d, sample_count %d\n", last_group_index, sbgp_sample_count);
+
+            avio_wb32(pb, sbgp_sample_count);
+            avio_wb32(pb, last_group_index);
+
+            last_group_index = current_group_index;
+            sbgp_sample_count = 0;
+        }
+
+        sbgp_sample_count++;
+    }
+    return 0;
+}
+
+static int mov_preroll_write_stbl_atoms(AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track)
+{
+    if (track->par->codec_id == AV_CODEC_ID_AAC && track->par->profile == FF_PROFILE_AAC_XHE) {
+        return mov_preroll_write_atoms_aacxhe(pb, mov, track, 1, track->entry, 1);
+    }
+
     struct sgpd_entry {
         int count;
         int16_t roll_distance;
@@ -2555,6 +2665,8 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
          track->par->codec_tag == MKTAG('r','t','p',' ')) &&
         track->has_keyframes && track->has_keyframes < track->entry)
         mov_write_stss_tag(pb, track, MOV_SYNC_SAMPLE);
+    if (track->par->codec_id == AV_CODEC_ID_AAC && track->par->profile == FF_PROFILE_AAC_XHE)
+        mov_write_stss_tag(pb, track, MOV_SYNC_SAMPLE);
     if (track->par->codec_type == AVMEDIA_TYPE_VIDEO && track->has_disposable)
         mov_write_sdtp_tag(pb, track);
     if (track->mode == MODE_MOV && track->flags & MOV_TRACK_STPS)
@@ -2572,7 +2684,7 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
         ff_mov_cenc_write_stbl_atoms(&track->cenc, pb);
     }
     if (track->par->codec_id == AV_CODEC_ID_OPUS || track->par->codec_id == AV_CODEC_ID_AAC) {
-        mov_preroll_write_stbl_atoms(pb, track);
+        mov_preroll_write_stbl_atoms(pb, mov, track);
     }
     return update_size(pb, pos);
 }
@@ -4549,6 +4661,18 @@ static int mov_write_traf_tag(AVIOContext *pb, MOVMuxContext *mov,
         }
     }
     mov_write_trun_tag(pb, mov, track, moof_size, start, track->entry);
+
+    start = 0;
+    if(track->par->codec_id == AV_CODEC_ID_AAC && track->par->profile == FF_PROFILE_AAC_XHE) {
+        for (i = 1; i < track->entry; i++) {
+            if (track->cluster[i].pos != track->cluster[i - 1].pos + track->cluster[i - 1].size) {
+                mov_preroll_write_atoms_aacxhe(pb, mov, track, start + 1, i + 1, 0);
+                start = i;
+            }
+        }
+        mov_preroll_write_atoms_aacxhe(pb, mov, track, start + 1, track->entry, 0);
+    }
+
     if (mov->mode == MODE_ISM) {
         mov_write_tfxd_tag(pb, track);
 
@@ -5210,6 +5334,10 @@ static int mov_flush_fragment(AVFormatContext *s, int force)
         // the last one. This is a wild guess (and fatal if it turns out
         // to be too long), but probably the best we can do - having a zero
         // duration is bad as well.
+
+        if (track->st->codec->codec_id == AV_CODEC_ID_AAC)//last sample duration can be zero for aac stream
+            continue;
+
         track->track_duration += get_cluster_duration(track, track->entry - 2);
         track->end_pts        += get_cluster_duration(track, track->entry - 2);
         if (!mov->missing_duration_warned) {
@@ -5616,6 +5744,8 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     trk->cluster[trk->entry].entries          = samples_in_chunk;
     trk->cluster[trk->entry].dts              = pkt->dts;
     trk->cluster[trk->entry].pts              = pkt->pts;
+	trk->cluster[trk->entry].audioframe_flags = pkt->audioframe_flags;
+
     if (!trk->entry && trk->start_dts != AV_NOPTS_VALUE) {
         if (!trk->frag_discont) {
             /* First packet of a new fragment. We already wrote the duration
@@ -5767,20 +5897,22 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
     if (trk->par->codec_id == AV_CODEC_ID_MP4ALS ||
             trk->par->codec_id == AV_CODEC_ID_AAC ||
             trk->par->codec_id == AV_CODEC_ID_AV1 ||
-            trk->par->codec_id == AV_CODEC_ID_FLAC) {
-        int side_size = 0;
-        uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
-        if (side && side_size > 0 && (side_size != par->extradata_size || memcmp(side, par->extradata, side_size))) {
-            void *newextra = av_mallocz(side_size + AV_INPUT_BUFFER_PADDING_SIZE);
-            if (!newextra)
-                return AVERROR(ENOMEM);
-            av_free(par->extradata);
-            par->extradata = newextra;
-            memcpy(par->extradata, side, side_size);
-            par->extradata_size = side_size;
-            if (!pkt->size) // Flush packet
-                mov->need_rewrite_extradata = 1;
-        }
+            trk->par->codec_id == AV_CODEC_ID_FLAC ||
+            trk->par->codec_id == AV_CODEC_ID_H264 ||
+            trk->par->codec_id == AV_CODEC_ID_HEVC) {
+            int side_size = 0;
+            uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
+            if (side && side_size > 0 && (side_size != par->extradata_size || memcmp(side, par->extradata, side_size))) {
+                void *newextra = av_mallocz(side_size + AV_INPUT_BUFFER_PADDING_SIZE);
+                if (!newextra)
+                    return AVERROR(ENOMEM);
+                av_free(par->extradata);
+                par->extradata = newextra;
+                memcpy(par->extradata, side, side_size);
+                par->extradata_size = side_size;
+                if (!pkt->size) // Flush packet
+                    mov->need_rewrite_extradata = 1;
+            }
     }
 
     if (!pkt->size) {
@@ -5805,6 +5937,9 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
             (mov->flags & FF_MOV_FLAG_FRAG_KEYFRAME &&
              par->codec_type == AVMEDIA_TYPE_VIDEO &&
              trk->entry && pkt->flags & AV_PKT_FLAG_KEY) ||
+            (mov->flags & FF_MOV_FLAG_FRAG_KEYFRAME &&
+             par->codec_type == AVMEDIA_TYPE_AUDIO && trk->par->codec_id == AV_CODEC_ID_AAC &&
+             trk->entry && (pkt->audioframe_flags & AV_PKT_AUDIOFRAME_FLAG_IPF || pkt->audioframe_flags & AV_PKT_AUDIOFRAME_FLAG_AAC_RAP)) ||
             (mov->flags & FF_MOV_FLAG_FRAG_EVERY_FRAME)) {
         if (frag_duration >= mov->min_fragment_duration) {
             // Set the duration of this track to line up with the next

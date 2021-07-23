@@ -1868,6 +1868,7 @@ typedef struct AVCodecContext {
 #define FF_PROFILE_AAC_HE_V2 28
 #define FF_PROFILE_AAC_LD   22
 #define FF_PROFILE_AAC_ELD  38
+#define FF_PROFILE_AAC_XHE  41
 #define FF_PROFILE_MPEG2_AAC_LOW 128
 #define FF_PROFILE_MPEG2_AAC_HE  131
 
@@ -2352,6 +2353,13 @@ typedef struct AVCodecContext {
      * - encoding: set by user
      */
     int export_side_data;
+
+    /*
+     * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE only.
+     */
+    int roll_distance;
+    int64_t rap_interval;
+
 } AVCodecContext;
 
 #if FF_API_CODEC_GET_SET

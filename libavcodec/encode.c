@@ -247,7 +247,9 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
     /* NOTE: if we add any audio encoders which output non-keyframe packets,
      *       this needs to be moved to the encoders, but for now we can do it
      *       here to simplify things */
-    avpkt->flags |= AV_PKT_FLAG_KEY;
+    if (!(avctx->codec->id == AV_CODEC_ID_AAC && avctx->profile == FF_PROFILE_AAC_XHE)) {
+        avpkt->flags |= AV_PKT_FLAG_KEY;
+    }
 
 end:
     av_frame_free(&padded_frame);

@@ -264,6 +264,7 @@ extern AVOutputFormat ff_mpeg2vob_muxer;
 extern AVInputFormat  ff_mpegps_demuxer;
 extern AVInputFormat  ff_mpegts_demuxer;
 extern AVOutputFormat ff_mpegts_muxer;
+extern AVOutputFormat ff_mpegts_omx_muxer;
 extern AVInputFormat  ff_mpegtsraw_demuxer;
 extern AVInputFormat  ff_mpegvideo_demuxer;
 extern AVInputFormat  ff_mpjpeg_demuxer;

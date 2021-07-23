@@ -1,6 +1,7 @@
 /*
  * Provide registration of all codecs, parsers and bitstream filters for libavcodec.
  * Copyright (c) 2002 Fabrice Bellard
+ * Copyright (c) 2020 MainConcept GmbH or its affiliates.
  *
  * This file is part of FFmpeg.
  *
@@ -808,6 +809,9 @@ extern AVCodec ff_vp9_mediacodec_decoder;
 extern AVCodec ff_vp9_qsv_decoder;
 extern AVCodec ff_vp9_vaapi_encoder;
 extern AVCodec ff_vp9_qsv_encoder;
+extern AVCodec ff_avc_omx_encoder;
+extern AVCodec ff_hevc_omx_encoder;
+extern AVCodec ff_xheaac_omx_encoder;
 
 // The iterate API is not usable with ossfuzz due to the excessive size of binaries created
 #if CONFIG_OSSFUZZ

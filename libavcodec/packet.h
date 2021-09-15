@@ -373,6 +373,12 @@ typedef struct AVPacket {
      * A combination of AV_PKT_FLAG values
      */
     int   flags;
+
+    /**
+     * A combination of AV_PKT_AUDIOFRAME_FLAG values
+     */
+    int audioframe_flags;
+
     /**
      * Additional packet data that can be provided by the container.
      * Packet can contain several types of side information.
@@ -427,6 +433,10 @@ typedef struct AVPacketList {
  * be discarded by the decoder.  I.e. Non-reference frames.
  */
 #define AV_PKT_FLAG_DISPOSABLE 0x0010
+
+#define AV_PKT_AUDIOFRAME_FLAG_IF       0x0001
+#define AV_PKT_AUDIOFRAME_FLAG_IPF      0x0002
+#define AV_PKT_AUDIOFRAME_FLAG_AAC_RAP  0x0004
 
 enum AVSideDataParamChangeFlags {
     AV_SIDE_DATA_PARAM_CHANGE_CHANNEL_COUNT  = 0x0001,

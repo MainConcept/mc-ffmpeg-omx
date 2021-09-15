@@ -49,6 +49,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
     pkt->buf                  = NULL;
     pkt->side_data            = NULL;
     pkt->side_data_elems      = 0;
+    pkt->audioframe_flags     = 0;
 }
 #endif
 
@@ -611,6 +612,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
     dst->flags                = src->flags;
+    dst->audioframe_flags     = src->audioframe_flags;
     dst->stream_index         = src->stream_index;
 
     dst->side_data            = NULL;

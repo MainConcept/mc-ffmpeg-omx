@@ -148,6 +148,7 @@ typedef struct VariantStream {
     int discontinuity_set;
     int discontinuity;
     int reference_stream_index;
+    int enc_prod_indep_seg;
 
     HLSSegment *segments;
     HLSSegment *last_segment;
@@ -413,7 +414,15 @@ static void write_codec_attr(AVStream *st, VariantStream *vs)
         snprintf(attr, sizeof(attr), "mp4a.40.34");
     } else if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
         /* TODO : For HE-AAC, HE-AACv2, the last digit needs to be set to 5 and 29 respectively */
-        snprintf(attr, sizeof(attr), "mp4a.40.2");
+        if (st->codecpar->extradata_size >= 2) {
+            int aot = st->codecpar->extradata[0] >> 3;
+            if (aot == 31) {
+                aot = ((AV_RB16(st->codecpar->extradata) >> 5) & 0x3f) + 32;
+            }
+            snprintf(attr, sizeof(attr), "mp4a.40.%d", aot);
+        } else {
+            snprintf(attr, sizeof(attr), "mp4a.40.2");
+        }
     } else if (st->codecpar->codec_id == AV_CODEC_ID_AC3) {
         snprintf(attr, sizeof(attr), "ac-3");
     } else if (st->codecpar->codec_id == AV_CODEC_ID_EAC3) {
@@ -1601,6 +1610,8 @@ static int hls_window(AVFormatContext *s, int last, VariantStream *vs)
         vs->discontinuity_set = 1;
     }
     if (vs->has_video && (hls->flags & HLS_INDEPENDENT_SEGMENTS)) {
+        avio_printf(byterange_mode ? hls->m3u8_out : vs->out, "#EXT-X-INDEPENDENT-SEGMENTS\n");
+    } else if (vs->enc_prod_indep_seg && (hls->flags & HLS_INDEPENDENT_SEGMENTS)) {
         avio_printf(byterange_mode ? hls->m3u8_out : vs->out, "#EXT-X-INDEPENDENT-SEGMENTS\n");
     }
     for (en = vs->segments; en; en = en->next) {
@@ -2957,6 +2968,7 @@ static int hls_init(AVFormatContext *s)
 
     for (i = 0; i < hls->nb_varstreams; i++) {
         vs = &hls->var_streams[i];
+        vs->enc_prod_indep_seg = 0;
 
         ret = format_name(s->url, &vs->m3u8_name, i, vs->varname);
         if (ret < 0)
@@ -2969,6 +2981,11 @@ static int hls_init(AVFormatContext *s)
         vs->initial_prog_date_time = initial_program_date_time;
 
         for (j = 0; j < vs->nb_streams; j++) {
+            if (vs->streams[j]->codecpar->rap_interval > 0 && vs->streams[j]->codecpar->codec_id == AV_CODEC_ID_AAC) {
+                vs->enc_prod_indep_seg = 1;
+                hls->recording_time = vs->streams[j]->codecpar->rap_interval;
+            }
+
             vs->has_video += vs->streams[j]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
             /* Get one video stream to reference for split segments
              * so use the first video stream index. */

@@ -68,6 +68,7 @@ enum {
 
 #define MPD_PROFILE_DASH 1
 #define MPD_PROFILE_DVB  2
+#define MPD_PROFILE_DASH_ON_DEMAND 4
 
 typedef struct Segment {
     char file[1024];
@@ -870,7 +871,7 @@ static int write_adaptation_set(AVFormatContext *s, AVIOContext *out, int as_ind
         } else {
             avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"audio/%s\" codecs=\"%s\"%s audioSamplingRate=\"%d\">\n",
                 i, os->format_name, os->codec_str, bandwidth_str, s->streams[i]->codecpar->sample_rate);
-            avio_printf(out, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"urn:mpeg:dash:23003:3:audio_channel_configuration:2011\" value=\"%d\" />\n",
+            avio_printf(out, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"urn:mpeg:mpegB:cicp:ChannelConfiguration\" value=\"%d\" />\n",
                 s->streams[i]->codecpar->channels);
         }
         if (!final && c->write_prft && os->producer_reference_time_str[0]) {
@@ -1172,6 +1173,8 @@ static int write_manifest(AVFormatContext *s, int final)
                 "\tprofiles=\"");
     if (c->profile & MPD_PROFILE_DASH)
          avio_printf(out, "%s%s", "urn:mpeg:dash:profile:isoff-live:2011", c->profile & MPD_PROFILE_DVB ? "," : "\"\n");
+    if (c->profile & MPD_PROFILE_DASH_ON_DEMAND)
+         avio_printf(out, "%s%s", "urn:mpeg:dash:profile:isoff-on-demand:2011", c->profile & MPD_PROFILE_DVB ? "," : "\"\n");
     if (c->profile & MPD_PROFILE_DVB)
          avio_printf(out, "%s", "urn:dvb:dash:profile:dvb-dash:2014\"\n");
     avio_printf(out, "\ttype=\"%s\"\n",
@@ -1481,6 +1484,10 @@ static int dash_init(AVFormatContext *s)
         AVStream *st;
         AVDictionary *opts = NULL;
         char filename[1024];
+
+        if (s->streams[i]->codecpar->rap_interval > 0 && s->streams[i]->codecpar->codec_id == AV_CODEC_ID_AAC) {
+            as->seg_duration = s->streams[i]->codecpar->rap_interval;
+        }
 
         os->bit_rate = s->streams[i]->codecpar->bit_rate;
         if (!os->bit_rate) {

@@ -1237,6 +1237,9 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
         if (td->xsize * (uint64_t)s->current_channel_offset > INT_MAX)
             return AVERROR_INVALIDDATA;
 
+        if (td->xsize * (uint64_t)s->current_channel_offset > INT_MAX)
+            return AVERROR_INVALIDDATA;
+
         td->channel_line_size = td->xsize * s->current_channel_offset;/* uncompress size of one line */
         uncompressed_size = td->channel_line_size * (uint64_t)td->ysize;/* uncompress size of the block */
     } else {

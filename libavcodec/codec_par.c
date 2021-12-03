@@ -126,6 +126,8 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
         par->initial_padding  = codec->initial_padding;
         par->trailing_padding = codec->trailing_padding;
         par->seek_preroll     = codec->seek_preroll;
+        par->roll_distance    = codec->roll_distance;
+        par->rap_interval     = codec->rap_interval;
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         par->width  = codec->width;
@@ -182,6 +184,8 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
         codec->initial_padding  = par->initial_padding;
         codec->trailing_padding = par->trailing_padding;
         codec->seek_preroll     = par->seek_preroll;
+        codec->roll_distance    = par->roll_distance;
+        codec->rap_interval     = par->rap_interval;
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         codec->width  = par->width;

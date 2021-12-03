@@ -650,6 +650,9 @@ static void guess_pkt_duration(AVFormatContext *s, AVStream *st, AVPacket *pkt)
     if (pkt->duration)
         return;
 
+    if (!pkt->duration && st->codecpar->codec_id == AV_CODEC_ID_AAC) // last packet zero duration is allowed for AAC
+        return;
+
     switch (st->codecpar->codec_type) {
     case AVMEDIA_TYPE_VIDEO:
         if (st->avg_frame_rate.num > 0 && st->avg_frame_rate.den > 0) {
@@ -819,7 +822,7 @@ static int prepare_input_packet(AVFormatContext *s, AVStream *st, AVPacket *pkt)
     }
 #endif
     /* update flags */
-    if (st->internal->is_intra_only)
+    if (st->internal->is_intra_only && st->codecpar->profile != FF_PROFILE_AAC_XHE)
         pkt->flags |= AV_PKT_FLAG_KEY;
 
     return 0;

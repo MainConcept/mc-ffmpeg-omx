@@ -230,7 +230,7 @@ static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t* seek_pos)
     return 0;
 }
 
-static int omx_set_commandline(AVFormatContext* avctx)
+static int omx_set_muxer_commandline(AVFormatContext* avctx)
 {
     int ret = 0;
     OMXComponentContext* s = avctx->priv_data;
@@ -349,7 +349,7 @@ static int mxf_init_avio(AVFormatContext* avctx)
 
     s_mux->streams[0] = avctx->pb;
 
-    if (s_mux->split_track || s_mux->split_channel) {// TODO: use the same file extension as in avctx->pb
+    if (s_mux->split_track || s_mux->split_channel) {
 
         char* file_name = remove_file_name_ext(avctx->url);
         char new_filename[1024];
@@ -409,7 +409,7 @@ static int mxf_init(AVFormatContext *avctx)
     ret = omx_set_pcm_param(avctx);
     if (ret) return ret;
 
-    ret = omx_set_commandline(avctx);
+    ret = omx_set_muxer_commandline(avctx);
     if (ret) return ret;
 
     ret = mxf_init_avio(avctx);
@@ -572,7 +572,7 @@ static int mxf_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt)
     }
     else if (st->codecpar->codec_id == AV_CODEC_ID_PCM_S16LE || st->codecpar->codec_id == AV_CODEC_ID_PCM_S24LE) {
     } else {
-        av_log(s, AV_LOG_ERROR, "Unsupported input AV_CODEC_ID = %d", st->codecpar->codec_id);
+        av_log(s, AV_LOG_ERROR, "Currently supported formats are tj2k, avc, vc3, mpeg2v, dv, pcm, aes3_382m, aes3_331, anc_data, vbi_data only.\nBut input AV_CODEC_ID = %d", st->codecpar->codec_id);
         ret = AVERROR_MUXER_NOT_FOUND;
     }
 

@@ -46,6 +46,9 @@ static av_cold int omx_cmpnt_encoder_init(AVCodecContext *avctx)
     ret = omx_cmpnt_start(s);
     if (ret) return ret;
 
+    ret = omx_get_codec_config(avctx, s->component);
+    if (ret) return ret;
+
     return 0;
 }
 
@@ -106,5 +109,5 @@ AVCodec ff_avc_omx_encoder = {
         .profiles         = NULL_IF_CONFIG_SMALL(ff_h264_profiles),
         .defaults         = avc_enc_omx_defaults,
         .priv_class       = &omx_avc_encoder_class,
-        .pix_fmts         = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_NONE }
+        .pix_fmts         = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_GBRP10LE, AV_PIX_FMT_NONE }
 };

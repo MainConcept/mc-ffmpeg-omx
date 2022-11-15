@@ -267,7 +267,7 @@ static int set_port_parameters(AVFormatContext* avctx)
     return 0;
 }
 
-static int omx_set_commandline(AVFormatContext* avctx)
+static int omx_set_muxer_commandline(AVFormatContext* avctx)
 {
     int ret = 0;
     OMXComponentContext* s = avctx->priv_data;
@@ -335,7 +335,7 @@ static int mpegts_init(AVFormatContext *avctx)
     ret = populate_stream_idx_map(avctx);
     if (ret) return ret;
 
-    ret = omx_set_commandline(avctx);
+    ret = omx_set_muxer_commandline(avctx);
     if (ret) return ret;
 
     ret = set_port_parameters(avctx);
@@ -400,7 +400,9 @@ static int mpegts_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
     AVStream *st = avctx->streams[avpkt->stream_index];
 
     int video_pkt = st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_HEVC || st->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO;
-    int audio_pkt = st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 || st->codecpar->codec_id == AV_CODEC_ID_AAC || st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM;
+    int audio_pkt = (st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 || st->codecpar->codec_id == AV_CODEC_ID_AAC ||
+                     st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM || st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2);
+
 
     if (!(video_pkt || audio_pkt)) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported format of input stream: %s\n",
@@ -490,11 +492,11 @@ static int mpegts_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt
               st->codecpar->extradata[0] == 1)))
             ret = ff_stream_add_bitstream_filter(st, "hevc_mp4toannexb", NULL);
     } else if (st->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-    } else if (st->codecpar->codec_id == AV_CODEC_ID_AAC || st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM) {
-    } else if (st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3) {
-        int a = st->codecpar->extradata_size;
+    } else if (st->codecpar->codec_id == AV_CODEC_ID_AAC || st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM ||
+               st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 ||
+               st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2) {
     } else {
-        av_log(s, AV_LOG_ERROR, "Currently supported formats are AVC, HEVC, AC3, EAC3 only.\n But input AV_CODEC_ID = %d", st->codecpar->codec_id);
+        av_log(s, AV_LOG_ERROR, "Currently supported formats are AVC, HEVC, MPEG-2, AAC, AC3, EAC3 only.\n But input AV_CODEC_ID = %d\n", st->codecpar->codec_id);
         ret = AVERROR_MUXER_NOT_FOUND;
     }
 

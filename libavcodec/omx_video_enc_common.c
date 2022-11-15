@@ -26,28 +26,246 @@
 #include "libavutil/eval.h"
 #include "omx_video_enc_common.h"
 
-static uint64_t get_ext_pos(uint8_t* p, uint64_t offset) {
-    uint64_t new_offset = (offset + 0x03L) & ~0x03L;
-    uint64_t padding = new_offset - offset;
-
-    memset(p + offset, 0, padding);
-    return new_offset;
+static enum AVPictureType omxpic_to_avpic(OMX_VIDEO_PICTURETYPE pix_t)
+{
+    switch (pix_t) {
+    case OMX_VIDEO_PictureTypeI:                 return AV_PICTURE_TYPE_I;
+    case OMX_VIDEO_PictureTypeP:                 return AV_PICTURE_TYPE_P;
+    case OMX_VIDEO_PictureTypeB:                 return AV_PICTURE_TYPE_B;
+    case OMX_VIDEO_PictureTypeSI:                return AV_PICTURE_TYPE_SI;
+    case OMX_VIDEO_PictureTypeSP:                return AV_PICTURE_TYPE_SP;
+    case OMX_VIDEO_PictureTypeS:                 return AV_PICTURE_TYPE_S;
+    default: break;
+    }
+    return AV_PICTURE_TYPE_NONE;
 }
 
-static int fill_extradata_sei_buf(OMX_BUFFERHEADERTYPE* buf, uint8_t* sei_data, uint64_t sei_size)
+static AVRational xFramerate_to_scale(const OMX_U32 xFramerate)
 {
-    uint64_t offset = get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
+    AVRational r = { 0,1 };
+    switch (xFramerate) {
+    case 14:
+    case 14000:
+        r = (AVRational){ 14000, 1000 };
+        break;
+    case 15:
+    case 15000:
+        r = (AVRational){ 15000, 1000 };
+        break;
+    case 23976:
+        r = (AVRational){ 24000, 1001 };
+        break;
+    case 29970:
+        r = (AVRational){ 30000, 1001 };
+        break;
+    case 59940: //59.940
+        r = (AVRational){ 60000, 1001 };
+        break;
+    case 119880: //119.880
+        r = (AVRational){ 120000, 1001 };
+        break;
+    case 24:
+    case 24000:
+        r = (AVRational){ 24000, 1000 };
+        break;
+    case 25:
+    case 25000:
+        r = (AVRational){ 25000, 1000 };
+        break;
+    case 50:
+    case 50000:
+        r = (AVRational){ 50000, 1000 };
+        break;
+    case 100:
+    case 100000:
+        r = (AVRational){ 100000, 1000 };
+        break;
+    case 120:
+    case 120000:
+        r = (AVRational){ 120000, 1000 };
+        break;
+    case 200:
+    case 200000:
+        r = (AVRational){ 200000, 1000 };
+        break;
+    case 239760:
+        r = (AVRational){ 240000, 1001 };
+        break;
+    }
+    return r;
+}
 
-    OMX_OTHER_EXTRADATATYPE* seicc_ext = buf->pBuffer + offset;
-    INIT_STRUCT(*seicc_ext);
+static enum AVPixelFormat OMX_to_pix_format(const OMX_COLOR_FORMATTYPE fmt)
+{
+    switch (fmt) {
+    case OMX_COLOR_FormatYUV420PackedPlanar:        return AV_PIX_FMT_YUV420P;
+    case OMX_COLOR_FormatYUV420PackedSemiPlanar:    return AV_PIX_FMT_NV12;
+    case OMX_COLOR_FormatYUV420PackedPlanar10bit:   return AV_PIX_FMT_YUV420P10LE;
+    case OMX_COLOR_FormatYUV422PackedPlanar:        return AV_PIX_FMT_YUV422P;
+    case OMX_COLOR_FormatYUV422PackedPlanar10bit:   return AV_PIX_FMT_YUV422P10LE;
+    case OMX_COLOR_FormatYUV420Planar:              return AV_PIX_FMT_YUV420P;
+    }
+    return AV_PIX_FMT_NONE;
+}
 
-    seicc_ext->nSize += sei_size;
-    seicc_ext->nDataSize = sei_size;
-    seicc_ext->eType = OMX_ExtraDataA53CC;
+OMX_COLOR_FORMATTYPE pix_format_to_OMX(enum AVPixelFormat fmt)
+{
+    switch (fmt) {
+    case AV_PIX_FMT_YUV420P:        return OMX_COLOR_FormatYUV420PackedPlanar;
+    case AV_PIX_FMT_NV12:           return OMX_COLOR_FormatYUV420PackedSemiPlanar;
+    case AV_PIX_FMT_YUV420P10LE:    return OMX_COLOR_FormatYUV420PackedPlanar10bit;
+    case AV_PIX_FMT_YUV422P:        return OMX_COLOR_FormatYUV422PackedPlanar;
+    case AV_PIX_FMT_YUV422P10LE:    return OMX_COLOR_FormatYUV422PackedPlanar10bit;
+    case AV_PIX_FMT_GBRP10LE:       return OMX_COLOR_FormatBGRPackedPlanar10bit;
+    default: break;
+    }
+    return OMX_COLOR_FormatUnused;
+}
 
-    memcpy(seicc_ext->data, sei_data, sei_size);
+static av_cold int profile_to_omx(enum AVPixelFormat pix_fmt, int profile)
+{
+    switch (profile) {
+    case FF_PROFILE_H264_BASELINE: return OMX_VIDEO_AVCProfileBaseline;
+    case FF_PROFILE_H264_MAIN:     return OMX_VIDEO_AVCProfileMain;
+    case FF_PROFILE_H264_EXTENDED: return OMX_VIDEO_AVCProfileExtended;
+    case FF_PROFILE_H264_HIGH:     return OMX_VIDEO_AVCProfileHigh;
+    case FF_PROFILE_H264_HIGH_10:  return OMX_VIDEO_AVCProfileHigh10;
+    case FF_PROFILE_H264_HIGH_422: return OMX_VIDEO_AVCProfileHigh422;
+    case FF_PROFILE_H264_HIGH_444: return OMX_VIDEO_AVCProfileHigh444;
+    }
+ 
+    switch (pix_fmt) {
+    case AV_PIX_FMT_YUV420P10LE: return OMX_VIDEO_AVCProfileHigh10;
+    case AV_PIX_FMT_YUV422P10LE: return OMX_VIDEO_AVCProfileHigh422;
+    case AV_PIX_FMT_YUV422P:     return OMX_VIDEO_AVCProfileHigh422;
+    }
+ 
+     return 0;
+}
 
-    offset += get_ext_pos(buf->pBuffer + offset, seicc_ext->nSize);
+static enum AVColorRange OMX_to_AV_color_range(const OMX_COLOR_RANGE fmt)
+{
+    switch (fmt) {
+    case RangeUnspecified: return AVCOL_RANGE_UNSPECIFIED;
+    case RangeFull:        return AVCOL_RANGE_MPEG;
+    case RangeLimited:     return AVCOL_RANGE_JPEG;
+    }
+    return AVCOL_RANGE_NB;
+}
+
+static enum AVColorPrimaries OMX_to_AV_color_primaries(const OMX_COLOR_PRIMARIES fmt)
+{
+    switch (fmt) {
+    case PrimariesBT709_6:
+    case PrimariesBT709_5:       return AVCOL_PRI_BT709;
+
+    case OMX_COLOR_FormatYUV420PackedPlanar: return AVCOL_PRI_RESERVED0;
+    case PrimariesUnspecified:               return AVCOL_PRI_UNSPECIFIED;
+    case PrimariesOther:                     return AVCOL_PRI_RESERVED;
+    case PrimariesBT470_6M:                  return AVCOL_PRI_BT470M;
+    case PrimariesBT470_6BG:                 return AVCOL_PRI_BT470BG;
+    case Primaries_SMPTE_170M:               return AVCOL_PRI_SMPTE170M;
+    case Primaries_SMPTE_240M:               return AVCOL_PRI_SMPTE240M;
+    case PrimariesGenericFilm:               return AVCOL_PRI_FILM;
+    case PrimariesBT2020:                    return AVCOL_PRI_BT2020;
+    case Primaries_SMPTEST428_1:             return AVCOL_PRI_SMPTEST428_1;
+    }
+    return AVCOL_PRI_NB;
+}
+
+static enum AVColorTransferCharacteristic OMX_to_AV_color_trc(const OMX_COLOR_TRANSFER fmt)
+{
+    switch (fmt) {
+    case TransferUnspecified:   return AVCOL_TRC_UNSPECIFIED;
+    case TransferSMPTE170M:     return AVCOL_TRC_SMPTE170M;
+                                return AVCOL_TRC_BT709;
+    case TransferST2084:        return AVCOL_TRC_SMPTEST2084;
+    case TransferSMPTE240M:     return AVCOL_TRC_SMPTE240M;
+    case TransferST428:         return AVCOL_TRC_SMPTEST428_1;
+    case TransferLinear:        return AVCOL_TRC_LINEAR;
+    case Transfer_BT2020_10:    return AVCOL_TRC_BT2020_10;
+    case Transfer_BT2020_12:    return AVCOL_TRC_BT2020_12;
+    case Transfer_IEC61966_2_1: return AVCOL_TRC_IEC61966_2_1;
+    case Transfer_IEC61966_2_4: return AVCOL_TRC_IEC61966_2_4;
+    case Transfer_BT1361_0:     return AVCOL_TRC_BT1361_ECG;
+    }
+    return AVCOL_TRC_NB;
+}
+
+static enum AVColorSpace OMX_to_AV_colorspace(const OMX_COLOR_MATRIX_COEFFS fmt)
+{
+    switch (fmt) {
+    case MatrixRGB:         return AVCOL_SPC_RGB;
+    case MatrixBT709_6:     return AVCOL_SPC_BT709;
+    case MatrixUnspecified: return AVCOL_SPC_UNSPECIFIED;
+    case MatrixFCC:         return AVCOL_SPC_FCC;
+    case MatrixBT470_6M:
+    case MatrixBT470_6BG:   return AVCOL_SPC_BT470BG;
+    case MatrixBT601_6:     return AVCOL_SPC_SMPTE170M;
+    case MatrixSMPTE240M:   return AVCOL_SPC_SMPTE240M;
+    case MatrixYCGCO:       return AVCOL_SPC_YCOCG;
+    }
+    return AVCOL_SPC_NB;
+}
+
+av_cold int level_to_omx(const char* level)
+{
+    char* tail = NULL;
+    int level_id = -1;
+
+    if (!level)
+        return 0;
+
+    if (!strcmp(level, "1b")) { // from libx264.c
+        return OMX_VIDEO_AVCLevel1b;
+    }
+    else if (strlen(level) <= 3) {
+        level_id = av_strtod(level, &tail) * 10 + 0.5;
+        if (*tail)
+            level_id = -1;
+    }
+
+    if (level_id <= 0)
+        return 0;
+    switch (level_id) {
+    case 10: return OMX_VIDEO_AVCLevel1;
+    case 11: return OMX_VIDEO_AVCLevel11;
+    case 12: return OMX_VIDEO_AVCLevel2;
+    case 13: return OMX_VIDEO_AVCLevel3;
+    case 20: return OMX_VIDEO_AVCLevel2;
+    case 21: return OMX_VIDEO_AVCLevel21;
+    case 22: return OMX_VIDEO_AVCLevel22;
+    case 30: return OMX_VIDEO_AVCLevel3;
+    case 31: return OMX_VIDEO_AVCLevel31;
+    case 32: return OMX_VIDEO_AVCLevel32;
+    case 40: return OMX_VIDEO_AVCLevel4;
+    case 41: return OMX_VIDEO_AVCLevel41;
+    case 42: return OMX_VIDEO_AVCLevel42;
+    case 50: return OMX_VIDEO_AVCLevel5;
+    case 51: return OMX_VIDEO_AVCLevel51;
+    }
+ 
+    return 0;
+}
+
+static int fill_extradata_dts(OMX_BUFFERHEADERTYPE* buf, int64_t dts, int64_t duration)
+{
+    uint64_t offset = omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
+
+    OMX_OTHER_EXTRADATATYPE* dts_ext = buf->pBuffer + offset;
+    INIT_STRUCT(*dts_ext);
+
+    TIMESTAMP_PARAM current_time_param;
+    current_time_param.DTS = dts;
+    current_time_param.duration = duration;
+
+    dts_ext->eType = OMX_ExtraDataDTS;
+    dts_ext->nDataSize = sizeof(TIMESTAMP_PARAM);
+    dts_ext->nSize += dts_ext->nDataSize;
+
+    memcpy(dts_ext->data, &current_time_param, dts_ext->nDataSize);
+
+    offset += omx_get_ext_pos(buf->pBuffer + offset, dts_ext->nSize);
 
     OMX_OTHER_EXTRADATATYPE last_empty_extra;
     INIT_STRUCT(last_empty_extra);
@@ -59,339 +277,276 @@ static int fill_extradata_sei_buf(OMX_BUFFERHEADERTYPE* buf, uint8_t* sei_data, 
     return 0;
 }
 
-static int frame_to_buffer_video(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFrame *fr)
-{
-    OMXComponentContext *s = avctx->priv_data;
+typedef struct extra_options {            // flags
+    TIMESTAMP_PARAM       dts;            // 1
+    OMX_U64               seek_pos;       // 2
+    OMX_ASPECT_RATIO      aspect_ratio;   // 4
+    OMX_VIDEO_PICTURETYPE picture_type;   // 8
+    OMX_INTERLACES        interlace_type; // 16
+    OMX_COLOR_ASPECT      color_aspect;   // 32
 
-    const AVPixFmtDescriptor * pix_desc = av_pix_fmt_desc_get((enum AVPixelFormat)fr->format);
-    size_t luma_width = 0;
-    size_t chroma_width = 0;
-
-    size_t luma_sz = 0;
-    size_t chroma_sz = 0;
-
-    size_t U_off = 0;
-    size_t V_off = 0;
-
-    buf->nFlags = 0;
-
-    if (!(pix_desc->flags & AV_PIX_FMT_FLAG_PLANAR))
-        return AVERROR_INVALIDDATA; // Only planar formats are supported
-    if (!(pix_desc->log2_chroma_h <= 1 && pix_desc->log2_chroma_w == 1))
-        return AVERROR_INVALIDDATA; // Only 4:2:0 and 4:2:2 formats are supported
-
-    luma_width = fr->width * pix_desc->comp->step;
-    chroma_width = (fr->width >> pix_desc->log2_chroma_w) * pix_desc->comp->step;
-
-    luma_sz = fr->height * luma_width;
-    chroma_sz = luma_sz >> (pix_desc->log2_chroma_h + pix_desc->log2_chroma_w);
-
-    for (int i = 0; i < fr->height; i++)
-        memcpy(buf->pBuffer + buf->nOffset + i * luma_width, fr->data[0] + i * fr->linesize[0], luma_width);
-
-    U_off = luma_sz;
-    V_off = luma_sz + chroma_sz;
-
-    for (int i = 0; i<fr->height >> pix_desc->log2_chroma_h; i++) {
-        memcpy(buf->pBuffer + buf->nOffset + U_off + i * chroma_width, fr->data[1] + i * fr->linesize[1], chroma_width);
-        memcpy(buf->pBuffer + buf->nOffset + V_off + i * chroma_width, fr->data[2] + i * fr->linesize[2], chroma_width);
-    }
-
-#ifdef DUMP_INPUT_DATA
-    static FILE* out = NULL;
-    if (!out)
-        out = fopen("file.yuv", "wb");
-    fwrite(buf->pBuffer + buf->nOffset, 1, luma_sz + chroma_sz + chroma_sz, out);
-#endif // #ifdef DUMP_INPUT_DATA
-
-    buf->nTimeStamp = to_omx_ticks(fr->pts * 1000000 * avctx->time_base.num / avctx->time_base.den);
-    buf->nFilledLen = luma_sz + 2 * chroma_sz;
-
-    if (fr->pict_type == AV_PICTURE_TYPE_I) // ffmpeg set this type on input frame when -force-key_frames is used ("-force_key_frames expr:gte\(t,n_forced*2\)")
-        buf->nFlags |= OMX_BUFFERFLAG_SYNCFRAME;
-
-    if (s->a53_cc) {
-        void* sei_data;
-        size_t sei_size = 0;
-        int ret = ff_alloc_a53_sei(fr, 0, &sei_data, &sei_size);
-        if(sei_size)
-            fill_extradata_sei_buf(buf, (uint8_t*)sei_data, sei_size);
-    }
-
-    return 0;
-}
-
-static int frame_to_buffer_audio(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFrame *fr)
-{
-    int new_data_size = fr->nb_samples * fr->channels * av_get_bytes_per_sample(fr->format);
-    memcpy(buf->pBuffer + buf->nOffset, fr->extended_data[0], new_data_size);
-
-    buf->nTimeStamp = to_omx_ticks(fr->pts * 1000000 * avctx->time_base.num / avctx->time_base.den);
-    buf->nFilledLen = new_data_size;
-    buf->nFlags = 0;
-
-    return 0;
-}
-
-int omx_send_frame(AVCodecContext *avctx, const AVFrame *frame)
-{
-    int ret = 0;
-
-    OMXComponentContext *s = avctx->priv_data;
-
-    OMX_BUFFERHEADERTYPE* buf = omx_pick_input_buffer(s);
-
-    if (!buf) {
-        buf = omx_wait_input_buffer(s);
-    }
-
-    if (!frame) {
-        buf->nFlags = OMX_BUFFERFLAG_EOS;
-        buf->nFilledLen = 0;
-        s->eos_flag = OMX_TRUE;
-    } else {
-        ret = avctx->codec_type == AVMEDIA_TYPE_VIDEO ? frame_to_buffer_video(avctx, buf, frame) : frame_to_buffer_audio(avctx, buf, frame);
-    }
-
-    OMX_EmptyThisBuffer(s->component, buf);
-
-    return ret;
-}
+    uint64_t flags;
+} extra_options_t;
 
 
-int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t* duration_omx)
+typedef enum extra_options_type {
+    dts_ext_flag            = 1,
+    seek_pos_ext_flag       = 2,
+    aspect_ratio_ext_flag   = 4,
+    picture_type_ext_flag   = 8,
+    interlace_type_ext_flag = 16,
+    color_aspect_ext_flag   = 32
+} extra_options_type;
+
+
+static int parse_all_extradata(OMX_BUFFERHEADERTYPE* buf, extra_options_t* duration_omx)
 {
     uint64_t offset = (buf->nOffset + buf->nFilledLen + 0x03L) & ~0x03L;
-
+    duration_omx->flags = 0;
+ 
     if (buf->nFlags & OMX_BUFFERFLAG_EXTRADATA && buf->nAllocLen - (offset + sizeof(OMX_OTHER_EXTRADATATYPE)) > 0) {
-        OMX_OTHER_EXTRADATATYPE *pExtra = (OMX_OTHER_EXTRADATATYPE *)(buf->pBuffer + offset);
+        OMX_OTHER_EXTRADATATYPE* pExtra = (OMX_OTHER_EXTRADATATYPE*)(buf->pBuffer + offset);
         while (pExtra->eType != OMX_ExtraDataNone && buf->nAllocLen - (offset + pExtra->nSize) > 0)
         {
             switch (pExtra->eType) {
-                case OMX_ExtraDataDTS:
-                    *dts_omx = from_omx_ticks(((TIMESTAMP_PARAM*)pExtra->data)->DTS);
-                    *duration_omx = from_omx_ticks(((TIMESTAMP_PARAM*)pExtra->data)->duration);
-                default:
-                    break;
+            case (OMX_EXTRADATATYPE)OMX_ExtraDataDTS:
+                duration_omx->dts = *((TIMESTAMP_PARAM*)pExtra->data);                duration_omx->flags |= dts_ext_flag; break;
+            case OMX_ExtraDataSeekInfo:
+                duration_omx->seek_pos = *((OMX_U64*)pExtra->data);                   duration_omx->flags |= seek_pos_ext_flag; break;
+            case OMX_ExtraDataAspectRatio:
+                duration_omx->aspect_ratio = *((OMX_ASPECT_RATIO*)pExtra->data);      duration_omx->flags |= aspect_ratio_ext_flag; break;
+            case OMX_ExtraDataVideoPictureType:
+                duration_omx->picture_type = *((OMX_VIDEO_PICTURETYPE*)pExtra->data); duration_omx->flags |= picture_type_ext_flag; break;
+            case OMX_ExtraDataInterlaceFormat:
+                duration_omx->interlace_type = *((OMX_INTERLACES*)pExtra->data);      duration_omx->flags |= interlace_type_ext_flag; break;
+            case OMX_ExtraDataColorAspect:
+                duration_omx->color_aspect = *((OMX_COLOR_ASPECT*)pExtra->data);      duration_omx->flags |= color_aspect_ext_flag; break;
+            case OMX_ExtraDataA53CC:
+                break;
+            default:
+                break;
             }
             offset += (pExtra->nSize + 0x03L) & ~0x03L;
-            pExtra = (OMX_OTHER_EXTRADATATYPE *)(buf->pBuffer + offset);
+            pExtra = (OMX_OTHER_EXTRADATATYPE*)(buf->pBuffer + offset);
         }
     }
     return 0;
 }
 
-int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHEADERTYPE* buf)
+
+int dec_fill_next_input_buffer(AVCodecContext* avctx, OMX_BUFFERHEADERTYPE* buf)
 {
-    OMXComponentContext *s = avctx->priv_data;
+    AVPacket pkt = { 0 };
+    int ret = ff_decode_get_packet(avctx, &pkt);
+    buf->nFlags = 0;
 
-    int ret = 0;
-
-    if (buf->nFlags & OMX_BUFFERFLAG_CODECCONFIG) { // Codecconfig will be attached to the next buffer with data. Otherwise ffmpeg will report error about NOPTS and TS muxer won't work due to empty packet.
-        av_free(s->codec_config);
-        s->codec_config = av_malloc(buf->nFilledLen);
-        memcpy(s->codec_config, buf->pBuffer + buf->nOffset, buf->nFilledLen);
-        s->codec_config_len = buf->nFilledLen;
-
-        return AVERROR(EAGAIN);
+    if (ret < 0 || pkt.size == 0) { // && ret != AVERROR_EOF) {
+        av_packet_unref(&pkt);
+        buf->nFlags |= ret == AVERROR_EOF ? OMX_BUFFERFLAG_EOS : 0;
+        return ret < 0 ? ret : AVERROR_INVALIDDATA; // INVALIDDATA when pkt.size == 0 it was taken from binkaudio.c
     }
 
-    ret = av_new_packet(avpkt, buf->nFilledLen);
-    avpkt->flags &= ~AV_PKT_DATA_NEW_EXTRADATA;
-    memcpy(avpkt->data, buf->pBuffer + buf->nOffset, buf->nFilledLen);
-    avpkt->size = buf->nFilledLen;
+    av_log(avctx, AV_LOG_TRACE,"fill_next_input_buffer: %d size %d pts: %lld dts: %lld duration: %d %s\n", pkt.pos, pkt.size, pkt.pts, pkt.dts, pkt.duration, av_err2str(ret));
 
-    if (s->codec_config && s->codec_config_len) {
-        uint8_t* p = av_packet_new_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, s->codec_config_len); // adding padding for extradata isn't neceessary here as it is added by packet allocator
-        avpkt->flags |= AV_PKT_DATA_NEW_EXTRADATA;
-        memcpy(p, s->codec_config, s->codec_config_len);
-        av_free(s->codec_config);
-        s->codec_config = NULL;
-        s->codec_config_len = 0;
-    }
+    memcpy(buf->pBuffer, pkt.data, pkt.size);
+    buf->nFilledLen = (OMX_U32)pkt.size;
+    buf->nTimeStamp = to_omx_ticks(pkt.pts);
 
-    if (buf->nFlags & OMX_BUFFERFLAG_TIMESTAMPINVALID) {
-        avpkt->pts = AV_NOPTS_VALUE;
-        avpkt->dts = AV_NOPTS_VALUE;
-    } else {
-        const int64_t getting_pts =
-                (from_omx_ticks(buf->nTimeStamp) * (int64_t)avctx->time_base.den + 1000000LL * (int64_t)avctx->time_base.num / 2) /
-                        (1000000LL * avctx->time_base.num);
-        int64_t getting_dts = AV_NOPTS_VALUE;
-        int64_t getting_duration = 0;
+    fill_extradata_dts(buf, pkt.dts, pkt.duration);
 
-        int64_t dts_omx = AV_NOPTS_VALUE;
-        int64_t duration_omx = AV_NOPTS_VALUE;
-        parse_extradata(buf, &dts_omx, &duration_omx);
+    av_packet_unref(&pkt);
 
-        if (dts_omx != AV_NOPTS_VALUE) {
-            getting_dts = (llabs(dts_omx) * (int64_t) avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
-                          (1000000LL * avctx->time_base.num);
-            getting_dts = dts_omx > 0 ? getting_dts : -getting_dts;
-        }
-
-        if (duration_omx != AV_NOPTS_VALUE) {
-            getting_duration = (duration_omx * (int64_t)avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
-                (1000000LL * avctx->time_base.num);
-        }
-
-        avpkt->pts = getting_pts;
-        avpkt->dts = getting_dts;
-        avpkt->duration = getting_duration;
-    }
-
-    if (buf->nFlags & OMX_BUFFERFLAG_SYNCFRAME) {
-        avpkt->audioframe_flags |= AV_PKT_AUDIOFRAME_FLAG_IPF;
-        avpkt->flags |= AV_PKT_FLAG_KEY;
-    } else
-        avpkt->flags &= ~AV_PKT_FLAG_KEY;
-
-    if (buf->nFlags & OMX_BUFFERFLAG_INDEPENDENT_FRAME)
-        avpkt->audioframe_flags |= AV_PKT_AUDIOFRAME_FLAG_IF;
-
-    if (buf->nFlags & OMX_BUFFERFLAG_AAC_RAP_SWITCHABLE)
-        avpkt->audioframe_flags |= AV_PKT_AUDIOFRAME_FLAG_AAC_RAP;
-
-    return ret;
+    return 0;
 }
 
-static int convert_buffer(AVCodecContext* avctx, OMX_BUFFERHEADERTYPE** out_buf, AVPacket* avpkt, int* buffer_eos_flag)
+static int omx_get_pic_param(OMXComponentContext *omxctx)
 {
-    OMXComponentContext *s = avctx->priv_data;
+    AVCodecContext *avctx = omxctx->avctx;
 
-    int ret = 0;
+    OMX_PARAM_PORTDEFINITIONTYPE port_definition;
+    INIT_STRUCT(port_definition);
 
-    ret = buffer_to_packet(avctx, avpkt, *out_buf);
+    int out_port_idx = omxctx->port_idx[omx_port_idx(omxctx, 1)];
 
-    *buffer_eos_flag = (*out_buf)->nFlags & OMX_BUFFERFLAG_EOS;
-    (*out_buf)->nFilledLen = 0;
-    OMX_FillThisBuffer(s->component, *out_buf);
-    *out_buf = NULL;
+    port_definition.nPortIndex = out_port_idx;
 
-    return ret;
+    OMX_ERRORTYPE rt = OMX_GetParameter(omxctx->component, OMX_IndexParamPortDefinition, &port_definition);
+
+    assert(port_definition.eDomain == OMX_PortDomainVideo);
+
+    avctx->width = port_definition.format.video.nFrameWidth;
+    avctx->height = port_definition.format.video.nFrameHeight;
+    avctx->pix_fmt = OMX_to_pix_format( port_definition.format.video.eColorFormat );
+    avctx->framerate = xFramerate_to_scale( port_definition.format.video.xFramerate );
+
+    return 0;
 }
 
-int omx_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
+static void* add_captured_buffer(OMXComponentContext* ctx, OMX_BUFFERHEADERTYPE* buffer)
 {
-    OMXComponentContext *s = avctx->priv_data;
+    OMXCapturedBuffer* p = av_malloc(sizeof(OMXCapturedBuffer));
+    memset(p, 0, sizeof(OMXCapturedBuffer));
+
+    p->buffer = buffer;
+    p->ctx = ctx;
+
+    if (ctx->captured_buffers_tail) {
+        ctx->captured_buffers_tail->next = p;
+        p->prev = ctx->captured_buffers_tail;
+    }
+
+    ctx->captured_buffers_tail = p;
+
+    return p;
+}
+
+static void remove_captured_buffer(OMXCapturedBuffer* p)
+{
+    if (p->next)
+        p->next->prev = p->prev;
+    else if (p->ctx) // it's the last buffer
+        p->ctx->captured_buffers_tail = p->prev;
+
+    if (p->prev)
+        p->prev->next = p->next;
+
+    p->buffer = NULL;
+    p->ctx = NULL;
+
+    av_free(p);
+}
+
+static void free_omx_buffer(void* p, uint8_t* data)
+{
+    OMXCapturedBuffer* buf = p;
+
+    if (buf->buffer) { // Otherwise it means that this buffer was already sent because component was stopped before buffer deallocation
+        buf->buffer->nFilledLen = 0;
+        OMX_FillThisBuffer(buf->ctx->component, buf->buffer);
+    }
+
+    remove_captured_buffer(buf);
+}
+
+int dec_buffer_to_frame(OMXComponentContext *omxctx, AVFrame* fr, OMX_BUFFERHEADERTYPE* buf)
+{
     int ret = 0;
-    int buffer_eos_flag = 0;
+    AVCodecContext *avctx = omxctx->avctx;
 
-    OMX_BUFFERHEADERTYPE *out_buf = NULL;
-    OMX_BUFFERHEADERTYPE *in_buf  = NULL;
+    omx_get_pic_param(omxctx);
 
-    ret = omx_wait_any_buffer(avctx, &out_buf, &in_buf);
-    if (ret == AVERROR(EINVAL))
+    fr->width  = FFMAX(avctx->width,  AV_CEIL_RSHIFT(avctx->coded_width,  avctx->lowres));
+    fr->height = FFMAX(avctx->height, AV_CEIL_RSHIFT(avctx->coded_height, avctx->lowres));
+
+    void* p = add_captured_buffer(omxctx, buf);
+    fr->buf[0] = av_buffer_create(buf->pBuffer + buf->nOffset, buf->nFilledLen, free_omx_buffer, p, AV_BUFFER_FLAG_READONLY);
+
+    av_image_fill_arrays(fr->data, fr->linesize, buf->pBuffer + buf->nOffset, avctx->pix_fmt, avctx->width, avctx->height, 1);
+    ret = ff_decode_frame_props(avctx, fr);
+    if (ret)
         return ret;
 
-    if (in_buf) {
-        ret = ff_encode_get_frame(avctx, s->frame);
-        if (ret == AVERROR_EOF)
-            s->eos_flag = OMX_TRUE;
-        else if (ret >= 0) {
-            ret = avctx->codec_type == AVMEDIA_TYPE_VIDEO ? frame_to_buffer_video(avctx, in_buf, s->frame)
-                                                          : frame_to_buffer_audio(avctx, in_buf, s->frame);
+    ret = ff_attach_decode_data(fr);
+    if (ret < 0)
+        return ret;
 
-            av_frame_unref(s->frame);
+    fr->pts = from_omx_ticks(buf->nTimeStamp);
 
-            OMX_EmptyThisBuffer(s->component, in_buf);
-            in_buf = NULL;
-        } else {
-            omx_put_input_buffer(s, in_buf);
-        }
+    //----------------------------------set frame flags
 
-        if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
-            return ret;
+    if (buf->nFlags & OMX_BUFFERFLAG_DATACORRUPT)
+        fr->flags |= AV_FRAME_FLAG_CORRUPT;
+
+    extra_options_t extradata;
+    parse_all_extradata(buf, &extradata);
+
+    if (extradata.flags & dts_ext_flag) {
+        fr->pkt_dts      = from_omx_ticks(extradata.dts.DTS);
+        fr->pkt_duration = from_omx_ticks(extradata.dts.duration);
     }
-
-    if (s->eos_flag) {
-        if (in_buf) { // Send buffer back, if eos flag is set, we won't have anything to proceed.
-            in_buf->nFlags = OMX_BUFFERFLAG_EOS;
-            in_buf->nFilledLen = 0;
-            OMX_EmptyThisBuffer(s->component, in_buf);
-            in_buf = NULL;
-        }
-
-        if (!out_buf)
-            out_buf = omx_wait_output_buffer(s);
+    if (extradata.flags & aspect_ratio_ext_flag) {
+        fr->sample_aspect_ratio = (AVRational){ extradata.aspect_ratio.aspectRatioX, extradata.aspect_ratio.aspectRatioY };
     }
-
-    // It's called from do_audio_out() line 910 of ffmpeg.c. While this function returns 0, it's called in loop. And as it returns EAGAIN only when there is
-    // input buffer in the queue, it will not block in omx_send_frame() because when it's called there should be at least single input buffer in queue.
-
-    if (out_buf) {
-        if (out_buf->nFlags & OMX_BUFFERFLAG_EOS) { // The last output buffer from OMX plugin.
-            out_buf->nFilledLen = 0;
-            OMX_FillThisBuffer(s->component, out_buf);
-            return AVERROR_EOF;
-        }
-
-        ret = convert_buffer(avctx, &out_buf, avpkt, &buffer_eos_flag);
-
-// Idea is: If input stream was ended, but there are no output frames yet (stream is short, and encoder buffer is bigger than stream) there is a chance that
-// the first buffer we received while flushing is codec config. But it has no payload. So we have to wait for the next buffer (and we expect it will be payload buffer,
-// otherwise it won't work). But we can't wait for output payload buffer when stream wasn't ended because encoder could send codec config before any input frames were consumed.
-        if (avpkt->size == 0 && s->eos_flag) {
-            out_buf = omx_wait_output_buffer(s);
-
-            ret = convert_buffer(avctx, &out_buf, avpkt, &buffer_eos_flag);
-        }
-
-        return buffer_eos_flag ? AVERROR_EOF : ret;
-    } else {
-        return AVERROR(EAGAIN);
+    if (extradata.flags & picture_type_ext_flag) {
+        fr->pict_type = omxpic_to_avpic(extradata.picture_type);
+        fr->key_frame = extradata.picture_type == OMX_VIDEO_PictureTypeI;
     }
-}
-
-av_cold void omx_append_parameter(char* dst, int dst_len, const char* format, ...)
-{
-    const int bufsize = MAX_ARG_STRLEN;
-    char tmp[MAX_ARG_STRLEN];
-
-    va_list args;
-    va_start(args, format);
-    vsnprintf(tmp, bufsize, format, args);
-    va_end(args);
-
-    strncat(dst, tmp, dst_len - strlen(dst) - 1); // -1 is for terminating NULL character
-}
-
-OMX_COLOR_FORMATTYPE pix_format_to_OMX(enum AVPixelFormat fmt)
-{
-    switch(fmt) {
-        case AV_PIX_FMT_YUV420P:        return OMX_COLOR_FormatYUV420PackedPlanar;
-        case AV_PIX_FMT_NV12:           return OMX_COLOR_FormatYUV420PackedSemiPlanar;
-        case AV_PIX_FMT_YUV420P10LE:    return OMX_COLOR_FormatYUV420PackedPlanar10bit;
-        case AV_PIX_FMT_YUV422P:        return OMX_COLOR_FormatYUV422PackedPlanar;
-        case AV_PIX_FMT_YUV422P10LE:    return OMX_COLOR_FormatYUV422PackedPlanar10bit;
-        default: break;
+    if (extradata.flags & interlace_type_ext_flag) {
+        fr->interlaced_frame = extradata.interlace_type &~ OMX_InterlaceFrameProgressive;
+        if (fr->interlaced_frame)
+            fr->top_field_first = extradata.interlace_type & OMX_InterlaceFrameTopFieldFirst ||
+                                  extradata.interlace_type & OMX_InterlaceInterleaveFrameTopFieldFirst ||
+                                  extradata.interlace_type & OMX_InterlaceInterleaveFieldTop;
     }
-
-    return OMX_COLOR_FormatUnused;
-}
-
-av_cold int omx_populate_extradata(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf)
-{
-    int ret = 0;
-
-    if (avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
-        av_free(avctx->extradata);
-        avctx->extradata = NULL;
-
-        avctx->extradata_size = buf->nFilledLen;
-        ret = av_reallocp(&avctx->extradata, avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-
-        if (ret < 0) {
-            avctx->extradata_size = 0;
-            return AVERROR(ENOMEM);
-        }
-
-        memcpy(avctx->extradata + avctx->extradata_size, buf->pBuffer + buf->nOffset, buf->nFilledLen);
-        avctx->extradata_size += buf->nFilledLen;
-        memset(avctx->extradata + avctx->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+    if (extradata.flags & color_aspect_ext_flag) {
+        fr->color_range     = OMX_to_AV_color_range(extradata.color_aspect.mRange);
+        fr->color_primaries = OMX_to_AV_color_primaries(extradata.color_aspect.mPrimaries);
+        fr->color_trc       = OMX_to_AV_color_trc(extradata.color_aspect.mTransfer);
+        fr->colorspace      = OMX_to_AV_colorspace(extradata.color_aspect.mMatrixCoeffs);
     }
 
     return 0;
+}
+
+int dec_omx_receive_frame(OMXComponentContext* s, AVFrame* frame)
+{
+    AVCodecContext *avctx = s->avctx;
+
+    int ret = 0;
+    OMX_BUFFERHEADERTYPE* in_buf = NULL;
+    OMX_BUFFERHEADERTYPE* out_buf = NULL;
+
+    if (s->eos_flag)
+        return AVERROR_EOF;
+
+    in_buf = omx_pick_input_buffer(s);
+
+    if (!in_buf) {
+        // If there is no input buffer, we should wait for output one, because we can't return EAGAIN here (see line 2243 ffmpeg.c)
+        ret = omx_wait_any_buffer(avctx, &out_buf, &in_buf);
+        if (ret == AVERROR(EINVAL))
+            return ret;
+        if (out_buf) { // Frame is ready, so just returns immediately
+            s->eos_flag = out_buf->nFlags & OMX_BUFFERFLAG_EOS ? 1 : 0; // out_buf->nFlags should be checked before FillThisBuffer is called
+
+            if (out_buf->nFilledLen) {
+                ret = dec_buffer_to_frame(s, frame, out_buf);
+            } else { // It should be done for empty buffer only, as otherwise buffer will be sent back in free_omx_buffer()
+                out_buf->nFilledLen = 0;
+                OMX_FillThisBuffer(s->component, out_buf);
+            }
+
+            return ret;
+        }
+
+        assert(in_buf);
+        assert(!out_buf);
+    }
+
+    ret = dec_fill_next_input_buffer(avctx, in_buf);
+    OMX_EmptyThisBuffer(s->component, in_buf);
+
+    if (ret != AVERROR_EOF && ret < 0)
+        return ret;
+
+    out_buf = omx_pick_output_buffer(s);
+    if (in_buf->nFlags & OMX_BUFFERFLAG_EOS && !out_buf) // If EOS was set on input buffer, FFMPEG flushes the codec. In this case codec cannot return EAGAIN as there will be no more input data. So, EAGAIN will cause FFMPEG to report decoding error and stop
+        out_buf = omx_wait_output_buffer(s);
+
+    if (out_buf) {
+        s->eos_flag = out_buf->nFlags & OMX_BUFFERFLAG_EOS ? 1 : 0;
+
+        if (out_buf->nFilledLen) {
+            ret = dec_buffer_to_frame(s, frame, out_buf);
+        } else { // It should be done for empty buffer only, as otherwise buffer will be sent back in free_omx_buffer()
+            out_buf->nFilledLen = 0;
+            OMX_FillThisBuffer(s->component, out_buf);
+        }
+
+        return ret;
+    }
+
+    return AVERROR(EAGAIN);
 }
 
 av_cold int omx_set_pic_param(AVCodecContext *avctx)
@@ -417,67 +572,6 @@ av_cold int omx_set_pic_param(AVCodecContext *avctx)
 
     ret = OMX_SetParameter(s->component, OMX_IndexParamPortDefinition, &port_definition);
     OMX_ERROR_CHECK(ret, avctx)
-
-    return 0;
-}
-
-av_cold int profile_to_omx(enum AVPixelFormat pix_fmt, int profile)
-{
-    switch (profile) {
-        case FF_PROFILE_H264_BASELINE : return OMX_VIDEO_AVCProfileBaseline;
-        case FF_PROFILE_H264_MAIN     : return OMX_VIDEO_AVCProfileMain;
-        case FF_PROFILE_H264_EXTENDED : return OMX_VIDEO_AVCProfileExtended;
-        case FF_PROFILE_H264_HIGH     : return OMX_VIDEO_AVCProfileHigh;
-        case FF_PROFILE_H264_HIGH_10  : return OMX_VIDEO_AVCProfileHigh10;
-        case FF_PROFILE_H264_HIGH_422 : return OMX_VIDEO_AVCProfileHigh422;
-        case FF_PROFILE_H264_HIGH_444 : return OMX_VIDEO_AVCProfileHigh444;
-    }
-
-    switch (pix_fmt) {
-        case AV_PIX_FMT_YUV420P10LE : return OMX_VIDEO_AVCProfileHigh10;
-        case AV_PIX_FMT_YUV422P10LE : return OMX_VIDEO_AVCProfileHigh422;
-        case AV_PIX_FMT_YUV422P     : return OMX_VIDEO_AVCProfileHigh422;
-    }
-
-    return 0;
-}
-
-av_cold int level_to_omx(const char* level)
-{
-    char *tail = NULL;
-    int level_id = -1;
-
-    if (!level)
-        return 0;
-
-    if (!strcmp(level, "1b")) { // from libx264.c
-        return OMX_VIDEO_AVCLevel1b;
-    } else if (strlen(level) <= 3) {
-        level_id = av_strtod(level, &tail) * 10 + 0.5;
-        if (*tail)
-            level_id = -1;
-    }
-
-    if (level_id <= 0)
-        return 0;
-
-    switch(level_id) {
-        case 10 : return OMX_VIDEO_AVCLevel1;
-        case 11 : return OMX_VIDEO_AVCLevel11;
-        case 12 : return OMX_VIDEO_AVCLevel2;
-        case 13 : return OMX_VIDEO_AVCLevel3;
-        case 20 : return OMX_VIDEO_AVCLevel2;
-        case 21 : return OMX_VIDEO_AVCLevel21;
-        case 22 : return OMX_VIDEO_AVCLevel22;
-        case 30 : return OMX_VIDEO_AVCLevel3;
-        case 31 : return OMX_VIDEO_AVCLevel31;
-        case 32 : return OMX_VIDEO_AVCLevel32;
-        case 40 : return OMX_VIDEO_AVCLevel4;
-        case 41 : return OMX_VIDEO_AVCLevel41;
-        case 42 : return OMX_VIDEO_AVCLevel42;
-        case 50 : return OMX_VIDEO_AVCLevel5;
-        case 51 : return OMX_VIDEO_AVCLevel51;
-    }
 
     return 0;
 }
@@ -534,48 +628,24 @@ av_cold int omx_set_avc_param(AVCodecContext *avctx, const char* level)
     return 0;
 }
 
-av_cold int omx_set_commandline(AVCodecContext *avctx)
+int omx_get_codec_config(AVCodecContext *avctx, OMX_HANDLETYPE component)
 {
-    int ret = 0;
-    OMXComponentContext *s = avctx->priv_data;
+    const size_t codec_config_max_size = 1024;
+    const size_t struct_size = sizeof(OMX_VIDEO_PARAM_CODECCONFIGTYPE) + codec_config_max_size;
+    OMX_VIDEO_PARAM_CODECCONFIGTYPE *codec_config = malloc(struct_size);
+    INIT_STRUCT(*codec_config);
 
-    OMX_VENDOR_PARAM_COMMANDLINETYPE *commandline;
+    codec_config->nCodecConfigMaxSize = codec_config_max_size;
 
-    int buffer_size = 0;
-    int struct_size = 0;
+    OMX_ERRORTYPE err = OMX_GetParameter(component, OMX_IndexParamVideoCodecConfig, codec_config);
 
-    if (!s->component_param)
-        return 0;
+    if (err == OMX_ErrorNone) {
+        avctx->extradata_size = codec_config->nCodecConfigSizeUsed;
+        avctx->extradata = av_mallocz(avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        memcpy(avctx->extradata, codec_config->CodecConfig, avctx->extradata_size);
+    }
 
-    buffer_size = strlen(s->component_param);
-    struct_size = sizeof(OMX_VENDOR_PARAM_COMMANDLINETYPE) + buffer_size;
-
-    commandline = malloc(struct_size);
-    INIT_STRUCT(*commandline);
-
-    commandline->nSize = struct_size;
-    commandline->nCommandlineMaxSize = buffer_size;
-    commandline->nCommandlineSizeUsed = buffer_size;
-
-    memcpy(commandline->data, s->component_param, buffer_size);
-
-    ret = OMX_SetParameter(s->component, OMX_IndexParamVendorCommandline, commandline);
-    OMX_ERROR_CHECK(ret, avctx)
-
-    free(commandline);
-
-    return 0;
-}
-
-int omx_cmpnt_codec_end(AVCodecContext *avctx)
-{
-    OMXComponentContext *s = avctx->priv_data;
-
-    omx_cmpnt_end(s);
-
-    avctx->extradata_size = 0;
-    av_free(avctx->extradata);
-    avctx->extradata = NULL;
+    free(codec_config);
 
     return 0;
 }

@@ -25,6 +25,8 @@
 #define AVCODEC_OMX_COMMON_H
 
 #include "internal.h"
+#include "libavutil/thread.h"
+
 
 #include <OMX_Core.h>
 #include <OMX_Component.h>
@@ -85,6 +87,14 @@ typedef struct OMXCoreLibrary {
 
 #define MAX_PORT_NUMBER 16
 
+typedef struct OMXCapturedBuffer {
+    struct OMXCapturedBuffer* next;
+    struct OMXCapturedBuffer* prev;
+
+    OMX_BUFFERHEADERTYPE* buffer;
+    struct OMXComponentContext* ctx;
+} OMXCapturedBuffer;
+
 typedef struct OMXComponentContext {
     const AVClass *class;
     void* avctx;
@@ -109,6 +119,8 @@ typedef struct OMXComponentContext {
 
     OMX_BUFFERHEADERTYPE** buffers[MAX_PORT_NUMBER];
     OMX_U32 buffers_n[MAX_PORT_NUMBER];
+
+    OMXCapturedBuffer* captured_buffers_tail;
 
     OMX_BOOL (*fill_buffer_done_cb)(struct OMXComponentContext* s, OMX_BUFFERHEADERTYPE *buffer);
 
@@ -171,5 +183,13 @@ OMX_BUFFERHEADERTYPE* omx_wait_output_buffer(OMXComponentContext *s);
 OMX_BUFFERHEADERTYPE* omx_pick_output_buffer(OMXComponentContext *s);
 int omx_input_buffers_n(OMXComponentContext *s);
 void omx_put_input_buffer(OMXComponentContext *s, OMX_BUFFERHEADERTYPE * buf);
+
+// Functions above are about pure OMX and have nothing to do with FFMPEG
+// Functions below are about OMX-FFMPEG structures relations
+// May be they should be separated among different files
+int omx_set_commandline(AVCodecContext *avctx);
+int omx_receive_packet(AVCodecContext *avctx, AVPacket *avpkt);
+uint64_t omx_get_ext_pos(uint8_t* p, uint64_t offset);
+int omx_cmpnt_codec_end(AVCodecContext *avctx);
 
 #endif // #ifndef AVCODEC_OMX_COMMON_H

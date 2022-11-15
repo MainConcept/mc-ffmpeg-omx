@@ -73,6 +73,7 @@
  **/
 #define OMX_COLOR_FormatYUV420PackedPlanar10bit VENDOR_COLOR_FORMAT(2)
 #define OMX_COLOR_FormatYUV422PackedPlanar10bit VENDOR_COLOR_FORMAT(3)
+#define OMX_COLOR_FormatBGRPackedPlanar10bit VENDOR_COLOR_FORMAT(4)
 
 /**
  * Custom parameter structures
@@ -160,9 +161,22 @@ typedef struct OMX_AUDIO_PARAM_XHEAACTYPE {
     OMX_U8  CodecConfig[1];
 } OMX_AUDIO_PARAM_XHEAACTYPE;
 
+
+/** Video codec config params */
+typedef struct OMX_VIDEO_PARAM_CODECCONFIGTYPE {
+    OMX_U32 nSize;                 /**< size of the structure in bytes */
+    OMX_VERSIONTYPE nVersion;      /**< OMX specification version information */
+    OMX_U32 nPortIndex;            /**< port that this structure applies to */
+    OMX_U32 nCodecConfigMaxSize;
+    OMX_U32 nCodecConfigSizeUsed;
+    OMX_U8  CodecConfig[1];
+} OMX_VIDEO_PARAM_CODECCONFIGTYPE;
+
+
 typedef enum OMX_INDEXTYPE_EXT {
-    OMX_IndexParamAudioDdp = 0x7f00007B,       /**< reference: OMX_AUDIO_PARAM_DDPTYPE */
-    OMX_IndexParamAudioXheaac = 0x7f00007C,       /**< reference: OMX_AUDIO_PARAM_XHEAACTYPE */
+    OMX_IndexParamAudioDdp = 0x7f00007B,           /**< reference: OMX_AUDIO_PARAM_DDPTYPE */
+    OMX_IndexParamAudioXheaac = 0x7f00007C,        /**< reference: OMX_AUDIO_PARAM_XHEAACTYPE */
+    OMX_IndexParamVideoCodecConfig = 0x7f00007D,   /**< reference: OMX_VIDEO_PARAM_CODECCONFIGTYPE */
 } OMX_INDEXTYPE_EXT;
 /*
  * End of Dolby structures copied from https://github.com/raspberrypi/firmware/blob/master/opt/vc/include/IL/OMX_Audio.h
@@ -183,10 +197,137 @@ typedef enum OMX_AUDIO_AACPROFILETYPE_EXT
     OMX_AUDIO_AACObjectXHE = 0x7F000001
 } OMX_AUDIO_AACPROFILETYPE_EXT;
 
+/*
+ * it was taken here: https://review.carbonrom.org/plugins/gitiles/CarbonROM/android_hardware_qcom_media/+/fa202b9b18f17f7835fd602db5fff530e61112b4/msmcobalt/mm-core/inc/OMX_QCOMExtns.h
+ * these are part of OMX1.2 but JB MR2 branch doesn't have them defined
+ * OMX_IndexParamInterlaceFormat
+ * OMX_INTERLACEFORMATTYPE
+ */
+
+typedef struct OMX_INTERLACEFORMATTYPE {
+    OMX_U32 nSize;
+    OMX_VERSIONTYPE nVersion;
+    OMX_U32 nPortIndex;
+    OMX_U32 nFormat;//OMX_INTERLACETYPE
+    OMX_TICKS nTimeStamp;
+
+} OMX_INTERLACEFORMATTYPE;
+
+typedef enum OMX_INTERLACETYPE
+{
+    OMX_InterlaceFrameProgressive,
+    OMX_InterlaceInterleaveFrameTopFieldFirst,
+    OMX_InterlaceInterleaveFrameBottomFieldFirst,
+    OMX_InterlaceFrameTopFieldFirst,
+    OMX_InterlaceFrameBottomFieldFirst,
+    OMX_InterlaceInterleaveFieldTop,
+    OMX_InterlaceInterleaveFieldBottom
+} OMX_INTERLACES;
+
+typedef struct OMX_ASPECT_RATIO
+{
+    OMX_U32 aspectRatioX;
+    OMX_U32 aspectRatioY;
+} OMX_ASPECT_RATIO;
+
+
+/*
+ * it was taken here:https://android.googlesource.com/platform/frameworks/native/+/android-7.1.1_r58/include/media/hardware/VideoAPI.h
+ */
+
+ // this is in sync with the range values in graphics.h
+typedef enum OMX_COLOR_RANGE {
+    RangeUnspecified,
+    RangeFull,
+    RangeLimited,
+    RangeOther = 0xff,
+} OMX_COLOR_RANGE;
+
+typedef enum OMX_COLOR_PRIMARIES {
+    PrimariesUnspecified,
+    PrimariesBT709_5,       // Rec.ITU-R BT.709-5 or equivalent
+    PrimariesBT709_6,       // Rec.ITU-R BT.709-6 or equivalent
+    PrimariesBT470_6M,      // Rec.ITU-R BT.470-6 System M or equivalent
+    PrimariesBT470_6BG,     // Rec.ITU-R BT.470-6 System B G or equivalent
+    PrimariesBT601_6_625,   // Rec.ITU-R BT.601-6 625 or equivalent
+    PrimariesBT601_6_525,   // Rec.ITU-R BT.601-6 525 or equivalent
+    PrimariesGenericFilm,   // Generic Film
+    PrimariesBT2020,        // Rec.ITU-R BT.2020 or equivalent
+    Primaries_SMPTE_170M,
+    Primaries_SMPTE_240M,
+    Primaries_SMPTEST428_1,
+    PrimariesOther = 0xff,
+} OMX_COLOR_PRIMARIES;
+// this partially in sync with the transfer values in graphics.h prior to the transfers
+// unlikely to be required by Android section
+typedef enum OMX_COLOR_TRANSFER {
+    TransferUnspecified,
+    TransferLinear,         // Linear transfer characteristics
+    TransferSRGB,           // sRGB or equivalent
+    TransferSMPTE170M,      // SMPTE 170M or equivalent (e.g. BT.601/709/2020)
+    TransferGamma22,        // Assumed display gamma 2.2
+    TransferGamma28,        // Assumed display gamma 2.8
+    TransferST2084,         // SMPTE ST 2084 for 10/12/14/16 bit systems
+    TransferHLG,            // ARIB STD-B67 hybrid-log-gamma
+    // transfers unlikely to be required by Android
+    TransferSMPTE240M = 0x40, // SMPTE 240M
+    TransferXvYCC,          // IEC 61966-2-4
+    TransferBT1361,         // Rec.ITU-R BT.1361 extended gamut
+    TransferST428,          // SMPTE ST 428-1
+    Transfer_BT2020_10,
+    Transfer_BT2020_12,
+    Transfer_IEC61966_2_1,
+    Transfer_IEC61966_2_4,
+    Transfer_BT1361_0,
+    TransferOther = 0xff,
+} OMX_COLOR_TRANSFER;
+
+typedef enum OMX_COLOR_MATRIX_COEFFS {
+    MatrixUnspecified,
+    MatrixBT709_5,          // Rec.ITU-R BT.709-5 or equivalent
+    MatrixBT709_6,          // Rec.ITU-R BT.709-6 or equivalent
+    MatrixBT470_6M,         // KR=0.30, KB=0.11 or equivalent
+    MatrixBT470_6BG,
+    MatrixBT601_6,          // Rec.ITU-R BT.601-6 625 or equivalent
+    MatrixSMPTE240M,        // SMPTE 240M or equivalent
+    MatrixBT2020,           // Rec.ITU-R BT.2020 non-constant luminance
+    MatrixBT2020Constant,   // Rec.ITU-R BT.2020 constant luminance
+    MatrixYCGCO,
+    MatrixRGB,
+    MatrixFCC,
+    MatrixOther = 0xff,
+} OMX_COLOR_MATRIX_COEFFS;
+// this is in sync with the standard values in graphics.h
+typedef enum  OMX_COLOR_STANDART {
+    StandardUnspecified,
+    StandardBT709,                  // PrimariesBT709_5 and MatrixBT709_5
+    StandardBT601_625,              // PrimariesBT601_6_625 and MatrixBT601_6
+    StandardBT601_625_Unadjusted,   // PrimariesBT601_6_625 and KR=0.222, KB=0.071
+    StandardBT601_525,              // PrimariesBT601_6_525 and MatrixBT601_6
+    StandardBT601_525_Unadjusted,   // PrimariesBT601_6_525 and MatrixSMPTE240M
+    StandardBT2020,                 // PrimariesBT2020 and MatrixBT2020
+    StandardBT2020Constant,         // PrimariesBT2020 and MatrixBT2020Constant
+    StandardBT470M,                 // PrimariesBT470_6M and MatrixBT470_6M
+    StandardFilm,                   // PrimariesGenericFilm and KR=0.253, KB=0.068
+    StandardOther = 0xff,
+}OMX_COLOR_STANDART;
+
+typedef struct OMX_COLOR_ASPECT {
+    OMX_COLOR_RANGE mRange;                // IN/OUT
+    OMX_COLOR_PRIMARIES mPrimaries;        // IN/OUT
+    OMX_COLOR_TRANSFER mTransfer;          // IN/OUT
+    OMX_COLOR_MATRIX_COEFFS mMatrixCoeffs; // IN/OUT
+} OMX_COLOR_ASPECT;
+
+
 /**
  * Custom parameter indices
  **/
 #define OMX_IndexParamVendorCommandline VENDOR_PARAM_INDEX(0)   /**< reference: OMX_VENDOR_PARAM_COMMANDLINETYPE */
+
+#ifndef OMX_IndexParamInterlaceFormat
+#define OMX_IndexParamInterlaceFormat VENDOR_PARAM_INDEX(1)
+#endif
 
  /**
   * Custom ExtraData id
@@ -194,5 +335,9 @@ typedef enum OMX_AUDIO_AACPROFILETYPE_EXT
 #define OMX_ExtraDataDTS VENDOR_EXTRADATATYPE(0)   /**< reference: OMX_OTHER_EXTRADATATYPE */
 #define OMX_ExtraDataA53CC VENDOR_EXTRADATATYPE(1) /**< reference: OMX_OTHER_EXTRADATATYPE */
 #define OMX_ExtraDataSeekInfo VENDOR_EXTRADATATYPE(2) /**< reference: OMX_OTHER_EXTRADATATYPE */
+#define OMX_ExtraDataAspectRatio VENDOR_EXTRADATATYPE(3)/**< reference: OMX_OTHER_EXTRADATATYPE */
+#define OMX_ExtraDataInterlaceFormat VENDOR_EXTRADATATYPE(4)/**< reference: OMX_OTHER_EXTRADATATYPE */
+#define OMX_ExtraDataVideoPictureType VENDOR_EXTRADATATYPE(5)/**< reference: OMX_OTHER_EXTRADATATYPE */
+#define OMX_ExtraDataColorAspect VENDOR_EXTRADATATYPE(6)/**< reference: OMX_OTHER_EXTRADATATYPE */
 
 #endif // OMXIL_COMMON_INCLUDE_OMX_OMX_EXTENSION_H

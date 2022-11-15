@@ -838,7 +838,11 @@ extern AVCodec ff_vp9_vaapi_encoder;
 extern AVCodec ff_vp9_qsv_encoder;
 extern AVCodec ff_avc_omx_encoder;
 extern AVCodec ff_hevc_omx_encoder;
+extern AVCodec ff_avc_omx_decoder;
+extern AVCodec ff_hevc_omx_decoder;
 extern AVCodec ff_xheaac_omx_encoder;
+extern AVCodec ff_vvc_omx_encoder;
+
 
 // The iterate API is not usable with ossfuzz due to the excessive size of binaries created
 #if CONFIG_OSSFUZZ

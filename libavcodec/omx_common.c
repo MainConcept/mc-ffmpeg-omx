@@ -440,8 +440,6 @@ av_cold int omx_cmpnt_start(OMXComponentContext *s)
         return AVERROR_UNKNOWN;
     }
 
-    s->captured_buffers_tail = NULL;
-
     ret = wait_for_switch(s, OMX_StateIdle);
     if (ret) {
         av_log(s->avctx, AV_LOG_ERROR, "Component cannot switch to Idle state\n");
@@ -479,8 +477,6 @@ av_cold int omx_cmpnt_end(OMXComponentContext *s)
 
     if (s->component)
         s->core.OMX_FreeHandle(s->component);
-
-    s->component = NULL;
 
 //    s->core.OMX_Deinit();
 
@@ -1099,25 +1095,7 @@ int omx_cmpnt_codec_end(AVCodecContext *avctx)
 {
     OMXComponentContext *s = avctx->priv_data;
 
-    OMXCapturedBuffer* b = s->captured_buffers_tail;
-
-    while (b) {
-        b->buffer->nFilledLen = 0;
-        OMX_FillThisBuffer(s->component, b->buffer);
-
-        OMXCapturedBuffer* old_b = b;
-        b = b->prev;
-
-        old_b->buffer = NULL;
-        old_b->ctx = NULL;
-        old_b->next = NULL;
-        old_b->prev = NULL;
-        // Don't free b because it will be freed later when AV Buffers containing these b will be unrefed
-    }
-
     omx_cmpnt_end(s);
-
-    av_frame_free(s->frame);
 
     avctx->extradata_size = 0;
     av_free(avctx->extradata);

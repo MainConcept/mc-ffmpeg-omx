@@ -87,14 +87,6 @@ typedef struct OMXCoreLibrary {
 
 #define MAX_PORT_NUMBER 16
 
-typedef struct OMXCapturedBuffer {
-    struct OMXCapturedBuffer* next;
-    struct OMXCapturedBuffer* prev;
-
-    OMX_BUFFERHEADERTYPE* buffer;
-    struct OMXComponentContext* ctx;
-} OMXCapturedBuffer;
-
 typedef struct OMXComponentContext {
     const AVClass *class;
     void* avctx;
@@ -119,8 +111,6 @@ typedef struct OMXComponentContext {
 
     OMX_BUFFERHEADERTYPE** buffers[MAX_PORT_NUMBER];
     OMX_U32 buffers_n[MAX_PORT_NUMBER];
-
-    OMXCapturedBuffer* captured_buffers_tail;
 
     OMX_BOOL (*fill_buffer_done_cb)(struct OMXComponentContext* s, OMX_BUFFERHEADERTYPE *buffer);
 

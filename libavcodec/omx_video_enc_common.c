@@ -382,52 +382,6 @@ static int omx_get_pic_param(OMXComponentContext *omxctx)
     return 0;
 }
 
-static void* add_captured_buffer(OMXComponentContext* ctx, OMX_BUFFERHEADERTYPE* buffer)
-{
-    OMXCapturedBuffer* p = av_malloc(sizeof(OMXCapturedBuffer));
-    memset(p, 0, sizeof(OMXCapturedBuffer));
-
-    p->buffer = buffer;
-    p->ctx = ctx;
-
-    if (ctx->captured_buffers_tail) {
-        ctx->captured_buffers_tail->next = p;
-        p->prev = ctx->captured_buffers_tail;
-    }
-
-    ctx->captured_buffers_tail = p;
-
-    return p;
-}
-
-static void remove_captured_buffer(OMXCapturedBuffer* p)
-{
-    if (p->next)
-        p->next->prev = p->prev;
-    else if (p->ctx) // it's the last buffer
-        p->ctx->captured_buffers_tail = p->prev;
-
-    if (p->prev)
-        p->prev->next = p->next;
-
-    p->buffer = NULL;
-    p->ctx = NULL;
-
-    av_free(p);
-}
-
-static void free_omx_buffer(void* p, uint8_t* data)
-{
-    OMXCapturedBuffer* buf = p;
-
-    if (buf->buffer) { // Otherwise it means that this buffer was already sent because component was stopped before buffer deallocation
-        buf->buffer->nFilledLen = 0;
-        OMX_FillThisBuffer(buf->ctx->component, buf->buffer);
-    }
-
-    remove_captured_buffer(buf);
-}
-
 int dec_buffer_to_frame(OMXComponentContext *omxctx, AVFrame* fr, OMX_BUFFERHEADERTYPE* buf)
 {
     int ret = 0;
@@ -435,20 +389,15 @@ int dec_buffer_to_frame(OMXComponentContext *omxctx, AVFrame* fr, OMX_BUFFERHEAD
 
     omx_get_pic_param(omxctx);
 
-    fr->width  = FFMAX(avctx->width,  AV_CEIL_RSHIFT(avctx->coded_width,  avctx->lowres));
-    fr->height = FFMAX(avctx->height, AV_CEIL_RSHIFT(avctx->coded_height, avctx->lowres));
-
-    void* p = add_captured_buffer(omxctx, buf);
-    fr->buf[0] = av_buffer_create(buf->pBuffer + buf->nOffset, buf->nFilledLen, free_omx_buffer, p, AV_BUFFER_FLAG_READONLY);
-
-    av_image_fill_arrays(fr->data, fr->linesize, buf->pBuffer + buf->nOffset, avctx->pix_fmt, avctx->width, avctx->height, 1);
-    ret = ff_decode_frame_props(avctx, fr);
+    ret = ff_get_buffer(avctx, fr, AV_GET_BUFFER_FLAG_REF);
     if (ret)
         return ret;
 
-    ret = ff_attach_decode_data(fr);
-    if (ret < 0)
-        return ret;
+    uint8_t* data[4];
+    int linesize[4];
+    //av_log(avctx, AV_LOG_DEBUG, "width: %d height: %d pix_fmt: %s\n", avctx->width,  avctx->height, av_get_pix_fmt_name(avctx->pix_fmt));
+    av_image_fill_arrays(data, linesize, buf->pBuffer + buf->nOffset, avctx->pix_fmt, avctx->width, avctx->height, 1);
+    av_image_copy(fr->data, fr->linesize, data, linesize, avctx->pix_fmt, avctx->width, avctx->height);
 
     fr->pts = from_omx_ticks(buf->nTimeStamp);
 
@@ -507,15 +456,12 @@ int dec_omx_receive_frame(OMXComponentContext* s, AVFrame* frame)
         if (ret == AVERROR(EINVAL))
             return ret;
         if (out_buf) { // Frame is ready, so just returns immediately
+            if (out_buf->nFilledLen)
+                ret = dec_buffer_to_frame(s, frame, out_buf);
             s->eos_flag = out_buf->nFlags & OMX_BUFFERFLAG_EOS ? 1 : 0; // out_buf->nFlags should be checked before FillThisBuffer is called
 
-            if (out_buf->nFilledLen) {
-                ret = dec_buffer_to_frame(s, frame, out_buf);
-            } else { // It should be done for empty buffer only, as otherwise buffer will be sent back in free_omx_buffer()
-                out_buf->nFilledLen = 0;
-                OMX_FillThisBuffer(s->component, out_buf);
-            }
-
+            out_buf->nFilledLen = 0;
+            OMX_FillThisBuffer(s->component, out_buf);
             return ret;
         }
 
@@ -534,14 +480,13 @@ int dec_omx_receive_frame(OMXComponentContext* s, AVFrame* frame)
         out_buf = omx_wait_output_buffer(s);
 
     if (out_buf) {
+        if (out_buf->nFilledLen)
+            ret = dec_buffer_to_frame(s, frame, out_buf);
+
         s->eos_flag = out_buf->nFlags & OMX_BUFFERFLAG_EOS ? 1 : 0;
 
-        if (out_buf->nFilledLen) {
-            ret = dec_buffer_to_frame(s, frame, out_buf);
-        } else { // It should be done for empty buffer only, as otherwise buffer will be sent back in free_omx_buffer()
-            out_buf->nFilledLen = 0;
-            OMX_FillThisBuffer(s->component, out_buf);
-        }
+        out_buf->nFilledLen = 0;
+        OMX_FillThisBuffer(s->component, out_buf);
 
         return ret;
     }

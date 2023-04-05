@@ -39,7 +39,7 @@ static av_cold int omx_cmpnt_decoder_init(AVCodecContext *avctx)
 
     s->avctx = avctx;
 
-    int ret = omx_cmpnt_init(s);
+    int ret = av_omx_cmpnt_init(s);
     if (ret) return ret;
 
     ret = omx_set_pic_param(avctx);
@@ -48,10 +48,10 @@ static av_cold int omx_cmpnt_decoder_init(AVCodecContext *avctx)
     ret = omx_set_avc_param(avctx, s_avc->level);
     if (ret) return ret;
 
-    ret = omx_set_commandline(avctx);
+    ret = av_omx_set_commandline(s);
     if (ret) return ret;
 
-    ret = omx_cmpnt_start(s);
+    ret = av_omx_cmpnt_start(s);
     if (ret) return ret;
 
     return 0;

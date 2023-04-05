@@ -2419,6 +2419,7 @@ CONFIG_EXTRA="
     mpegvideo
     mpegvideoenc
     mss34dsp
+    omx_comp
     pixblockdsp
     qpeldsp
     qsv
@@ -3066,6 +3067,7 @@ mediafoundation_deps="mftransform_h MFCreateAlignedMemoryBuffer"
 mediafoundation_extralibs="-lmfplat -lmfuuid -lole32 -lstrmiids"
 omx_deps="libdl pthreads"
 omx_rpi_select="omx"
+omx_comp_if_any="omx_enc_avc omx_dec_avc omx_enc_hevc omx_dec_hevc omx_enc_xheaac omx_enc_vvc omx_ts_mux omx_mxf_mux"
 qsv_deps="libmfx"
 qsvdec_select="qsv"
 qsvenc_select="qsv"

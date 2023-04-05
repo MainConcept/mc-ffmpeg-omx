@@ -34,7 +34,7 @@
 #include "libavutil/thread.h"
 
 #include "libavcodec/internal.h"
-#include "libavcodec/omx_common.h"
+#include "libavutil/omx_common.h"
 
 #include "avformat.h"
 #include "avio_internal.h"
@@ -131,11 +131,11 @@ static int disable_unused_ports(AVFormatContext *avctx)
         const int end_n   = s->nStartPortNumber[i] + s->nPorts[i];
 
         for (int j=start_n + n_streams[codec_type]; j<end_n; j++)
-            if (!s->port_out[rev_port_idx(s, j)]) {
-                omx_disable_port(s, j);
+            if (!s->port_out[av_omx_rev_port_idx(s, j)]) {
+                av_omx_disable_port(s, j);
             } else {
                 if (!out_port_to_enable) {
-                    omx_disable_port(s, j);
+                    av_omx_disable_port(s, j);
                 } else {
                     out_port_to_enable--;
                 }
@@ -274,7 +274,7 @@ static OMX_BOOL fill_buffer_done_cb(OMXComponentContext* s, OMX_BUFFERHEADERTYPE
     int64_t seek_pos = -1;
     parse_extradata(buffer, &seek_pos);
 
-    OMX_U32 stream_idx = rev_port_idx(s, buffer->nOutputPortIndex) - s_mux->first_out_port;
+    OMX_U32 stream_idx = av_omx_rev_port_idx(s, buffer->nOutputPortIndex) - s_mux->first_out_port;
 
     if (seek_pos >= 0) {
         avio_seek(avctx->pb, seek_pos, SEEK_SET);
@@ -379,7 +379,7 @@ static int mxf_init_avio(AVFormatContext* avctx)
         free(file_name);
     }
 
-    s_mux->first_out_port = rev_port_idx(s, s->nStartPortNumber[OMX_PortDomainOther]);
+    s_mux->first_out_port = av_omx_rev_port_idx(s, s->nStartPortNumber[OMX_PortDomainOther]);
     return 0;
 }
 
@@ -394,7 +394,7 @@ static int mxf_init(AVFormatContext *avctx)
     if (avctx->nb_streams > MAX_STREAMS_COUNT)
         return AVERROR_STREAM_NOT_FOUND;
 
-    int ret = omx_cmpnt_init(s);
+    int ret = av_omx_cmpnt_init(s);
     if (ret) return ret;
 
     ret = disable_unused_ports(avctx);
@@ -415,7 +415,7 @@ static int mxf_init(AVFormatContext *avctx)
     ret = mxf_init_avio(avctx);
     if (ret) return ret;
 
-    ret = omx_cmpnt_start(s);
+    ret = av_omx_cmpnt_start(s);
     if (ret) return ret;
 
     return ret;
@@ -426,7 +426,7 @@ static void mxf_deinit(AVFormatContext *avctx)
     struct OMX_MXF_Mux *s_mux = avctx->priv_data;
     struct OMXComponentContext *s = &s_mux->base;
 
-    omx_cmpnt_end(s);
+    av_omx_cmpnt_end(s);
 }
 
 static int convert_buffer(AVCodecContext* avctx, OMX_BUFFERHEADERTYPE** out_buf, AVPacket* avpkt, int* buffer_eos_flag)
@@ -488,7 +488,7 @@ static int mxf_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
         return 0;
     }
 
-    OMX_BUFFERHEADERTYPE* buf = omx_wait_input_buffer_n(s, rev_port_idx(s, omx_port));
+    OMX_BUFFERHEADERTYPE* buf = av_omx_wait_input_buffer_n(s, av_omx_rev_port_idx(s, omx_port));
 
     buf->nFlags = 0;
 
@@ -506,7 +506,7 @@ static int mxf_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
 
     OMX_EmptyThisBuffer(s->component, buf);
 
-    while (out_buf = omx_pick_output_buffer(s)) {
+    while (out_buf = av_omx_pick_output_buffer(s)) {
         out_buf->nFilledLen = 0;
         OMX_FillThisBuffer(s->component, out_buf);
     }
@@ -529,14 +529,14 @@ static int mxf_write_end(AVFormatContext* avctx)
         if (s->port_out[i] || s->port_disabled[i])
             continue;
 
-        OMX_BUFFERHEADERTYPE* buf = omx_wait_input_buffer_n(s, i);
+        OMX_BUFFERHEADERTYPE* buf = av_omx_wait_input_buffer_n(s, i);
         buf->nFlags = OMX_BUFFERFLAG_EOS;
         s->eos_flag = OMX_TRUE;
         OMX_EmptyThisBuffer(s->component, buf);
     }
 
     int expect_eos = s_mux->out_port_enabled;
-    while (out_buf = omx_wait_output_buffer(s)) {
+    while (out_buf = av_omx_wait_output_buffer(s)) {
         assert(buffer->nFilledLen == 0);
 
         if (out_buf->nFlags & OMX_BUFFERFLAG_EOS)

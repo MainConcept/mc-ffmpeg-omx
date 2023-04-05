@@ -250,7 +250,7 @@ av_cold int level_to_omx(const char* level)
 
 static int fill_extradata_dts(OMX_BUFFERHEADERTYPE* buf, int64_t dts, int64_t duration)
 {
-    uint64_t offset = omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
+    uint64_t offset = av_omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
 
     OMX_OTHER_EXTRADATATYPE* dts_ext = buf->pBuffer + offset;
     INIT_STRUCT(*dts_ext);
@@ -265,7 +265,7 @@ static int fill_extradata_dts(OMX_BUFFERHEADERTYPE* buf, int64_t dts, int64_t du
 
     memcpy(dts_ext->data, &current_time_param, dts_ext->nDataSize);
 
-    offset += omx_get_ext_pos(buf->pBuffer + offset, dts_ext->nSize);
+    offset += av_omx_get_ext_pos(buf->pBuffer + offset, dts_ext->nSize);
 
     OMX_OTHER_EXTRADATATYPE last_empty_extra;
     INIT_STRUCT(last_empty_extra);
@@ -366,7 +366,7 @@ static int omx_get_pic_param(OMXComponentContext *omxctx)
     OMX_PARAM_PORTDEFINITIONTYPE port_definition;
     INIT_STRUCT(port_definition);
 
-    int out_port_idx = omxctx->port_idx[omx_port_idx(omxctx, 1)];
+    int out_port_idx = omxctx->port_idx[av_omx_port_idx(omxctx, 1)];
 
     port_definition.nPortIndex = out_port_idx;
 
@@ -448,11 +448,11 @@ int dec_omx_receive_frame(OMXComponentContext* s, AVFrame* frame)
     if (s->eos_flag)
         return AVERROR_EOF;
 
-    in_buf = omx_pick_input_buffer(s);
+    in_buf = av_omx_pick_input_buffer(s);
 
     if (!in_buf) {
         // If there is no input buffer, we should wait for output one, because we can't return EAGAIN here (see line 2243 ffmpeg.c)
-        ret = omx_wait_any_buffer(avctx, &out_buf, &in_buf);
+        ret = av_omx_wait_any_buffer(s, &out_buf, &in_buf);
         if (ret == AVERROR(EINVAL))
             return ret;
         if (out_buf) { // Frame is ready, so just returns immediately
@@ -475,9 +475,9 @@ int dec_omx_receive_frame(OMXComponentContext* s, AVFrame* frame)
     if (ret != AVERROR_EOF && ret < 0)
         return ret;
 
-    out_buf = omx_pick_output_buffer(s);
+    out_buf = av_omx_pick_output_buffer(s);
     if (in_buf->nFlags & OMX_BUFFERFLAG_EOS && !out_buf) // If EOS was set on input buffer, FFMPEG flushes the codec. In this case codec cannot return EAGAIN as there will be no more input data. So, EAGAIN will cause FFMPEG to report decoding error and stop
-        out_buf = omx_wait_output_buffer(s);
+        out_buf = av_omx_wait_output_buffer(s);
 
     if (out_buf) {
         if (out_buf->nFilledLen)
@@ -502,7 +502,7 @@ av_cold int omx_set_pic_param(AVCodecContext *avctx)
     OMX_PARAM_PORTDEFINITIONTYPE port_definition;
     INIT_STRUCT(port_definition);
 
-    int in_port_idx = s->port_idx[omx_port_idx(s, 0)];
+    int in_port_idx = s->port_idx[av_omx_port_idx(s, 0)];
 
     port_definition.nPortIndex = in_port_idx;
 
@@ -532,7 +532,7 @@ av_cold int omx_set_avc_param(AVCodecContext *avctx, const char* level)
     INIT_STRUCT(bitrate);
     INIT_STRUCT(avc_param);
 
-    int out_port_idx = s->port_idx[omx_port_idx(s, 1)];
+    int out_port_idx = s->port_idx[av_omx_port_idx(s, 1)];
 
     bitrate.eControlRate = avctx->rc_min_rate == avctx->rc_max_rate ? OMX_Video_ControlRateConstant : OMX_Video_ControlRateVariable;
     bitrate.nTargetBitrate = avctx->bit_rate;

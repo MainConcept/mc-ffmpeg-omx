@@ -78,7 +78,7 @@ static av_cold int omx_cmpnt_encoder_init(AVCodecContext *avctx)
 
     s->avctx = avctx;
 
-    ret = omx_cmpnt_init(s);
+    ret = av_omx_cmpnt_init(s);
     if (ret) return ret;
 
     ret = omx_set_audio_pcm_param(avctx);
@@ -90,10 +90,10 @@ static av_cold int omx_cmpnt_encoder_init(AVCodecContext *avctx)
     if (!(avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER))
         avctx->codec_id = AV_CODEC_ID_AAC_LATM;
 
-    ret = omx_set_commandline(avctx);
+    ret = av_omx_set_commandline(s);
     if (ret) return ret;
 
-    ret = omx_cmpnt_start(s);
+    ret = av_omx_cmpnt_start(s);
     if (ret) return ret;
 
     const size_t codec_config_max_size = 1024;
@@ -135,7 +135,7 @@ static const AVCodecDefault heaac_enc_omx_defaults[] = {
 static const AVClass omx_xheaac_encoder_class = {
         .class_name = "omx_enc_xheaac",
         .item_name  = av_default_item_name,
-        .option     = omx_options,
+        .option     = av_omx_options,
         .version    = LIBAVUTIL_VERSION_INT,
 };
 

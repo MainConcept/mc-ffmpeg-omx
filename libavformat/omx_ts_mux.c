@@ -34,7 +34,7 @@
 #include "libavutil/thread.h"
 
 #include "libavcodec/internal.h"
-#include "libavcodec/omx_common.h"
+#include "libavutil/omx_common.h"
 
 #include "avformat.h"
 #include "avio_internal.h"
@@ -190,8 +190,8 @@ static int disable_unused_ports(AVFormatContext *avctx)
         const int end_n   = s->nStartPortNumber[i] + s->nPorts[i];
 
         for (int j=start_n + n_streams[codec_type]; j<end_n; j++)
-            if (!s->port_out[rev_port_idx(s, j)])
-                omx_disable_port(s, j);
+            if (!s->port_out[av_omx_rev_port_idx(s, j)])
+                av_omx_disable_port(s, j);
     }
 
     return 0;
@@ -326,7 +326,7 @@ static int mpegts_init(AVFormatContext *avctx)
     if (avctx->nb_streams > MAX_STREAMS_COUNT)
         return AVERROR_STREAM_NOT_FOUND;
 
-    int ret = omx_cmpnt_init(s);
+    int ret = av_omx_cmpnt_init(s);
     if (ret) return ret;
 
     ret = disable_unused_ports(avctx);
@@ -341,7 +341,7 @@ static int mpegts_init(AVFormatContext *avctx)
     ret = set_port_parameters(avctx);
     if (ret) return ret;
 
-    ret = omx_cmpnt_start(s);
+    ret = av_omx_cmpnt_start(s);
     if (ret) return ret;
 
     return ret;
@@ -352,7 +352,7 @@ static void mpegts_deinit(AVFormatContext *avctx)
     struct OMX_TS_Mux *s_mux = avctx->priv_data;
     struct OMXComponentContext *s = &s_mux->base;
 
-    omx_cmpnt_end(s);
+    av_omx_cmpnt_end(s);
 }
 
 
@@ -417,7 +417,7 @@ static int mpegts_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
         return 0;
     }
 
-    OMX_BUFFERHEADERTYPE* buf = omx_wait_input_buffer_n(s, rev_port_idx(s, omx_port));
+    OMX_BUFFERHEADERTYPE* buf = av_omx_wait_input_buffer_n(s, av_omx_rev_port_idx(s, omx_port));
 
     buf->nFlags = 0;
 
@@ -435,7 +435,7 @@ static int mpegts_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
 
     OMX_EmptyThisBuffer(s->component, buf);
 
-    while (out_buf = omx_pick_output_buffer(s)) {
+    while (out_buf = av_omx_pick_output_buffer(s)) {
         avio_write(avctx->pb, out_buf->pBuffer + out_buf->nOffset, out_buf->nFilledLen);
 
         out_buf->nFilledLen = 0;
@@ -455,13 +455,13 @@ static int mpegts_write_end(AVFormatContext* avctx)
         if (s->port_out[i] || s->port_disabled[i])
             continue;
 
-        OMX_BUFFERHEADERTYPE* buf = omx_wait_input_buffer_n(s, i);
+        OMX_BUFFERHEADERTYPE* buf = av_omx_wait_input_buffer_n(s, i);
         buf->nFlags = OMX_BUFFERFLAG_EOS;
         s->eos_flag = OMX_TRUE;
         OMX_EmptyThisBuffer(s->component, buf);
     }
 
-    while (out_buf = omx_wait_output_buffer(s)) {
+    while (out_buf = av_omx_wait_output_buffer(s)) {
         avio_write(avctx->pb, out_buf->pBuffer + out_buf->nOffset, out_buf->nFilledLen);
 
         out_buf->nFilledLen = 0;

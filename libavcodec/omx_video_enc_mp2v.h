@@ -1,5 +1,5 @@
 /*
- * OMX Common
+ * OMX Video MP2V encoder
  * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
@@ -21,19 +21,14 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef AVCODEC_OMX_COMMON_H
-#define AVCODEC_OMX_COMMON_H
-#include "libavutil/omx_common.h"
+#ifndef AVCODEC_OMX_VIDEO_ENC_MP2V_H
+#define AVCODEC_OMX_VIDEO_ENC_MP2V_H
 
-// Functions above are about pure OMX and have nothing to do with FFMPEG
-// Functions below are about OMX-FFMPEG structures relations
-// May be they should be separated among different files
-int omx_receive_packet(AVCodecContext *avctx, AVPacket *avpkt);
-int omx_cmpnt_codec_end(AVCodecContext *avctx);
+#include "omx_video_enc_common.h"
 
-OMX_COLOR_MATRIX_COEFFS AV_to_OMX_colorspace(enum AVColorSpace colorspace);
-OMX_COLOR_RANGE AV_to_OMX_color_range(enum AVColorRange fmt);
-OMX_COLOR_PRIMARIES AV_to_OMX_color_primaries(enum AVColorPrimaries fmt);
-OMX_COLOR_TRANSFER AV_to_OMX_color_trc(enum AVColorTransferCharacteristic fmt);
+typedef struct OMXMP2VEncComponentContext {
+    struct OMXComponentContext base;
+    char* level;
+} OMXMP2VEncComponentContext;
 
-#endif // #ifndef AVCODEC_OMX_COMMON_H
+#endif // AVCODEC_OMX_VIDEO_ENC_MP2V_H

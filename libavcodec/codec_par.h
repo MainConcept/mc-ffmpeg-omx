@@ -203,6 +203,11 @@ typedef struct AVCodecParameters {
      */
     int roll_distance;
     int64_t rap_interval;
+    /**
+    * Audio only. mhm1Enc/MPEG_3D_AUDIO only.
+    */
+    uint8_t* compat_profiles;
+
 } AVCodecParameters;
 
 /**

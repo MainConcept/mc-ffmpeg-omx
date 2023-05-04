@@ -1,6 +1,6 @@
 /*
  * OMX TS muxer
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -249,15 +249,19 @@ static int set_port_parameters(AVFormatContext* avctx)
 
             AVCodecParameters* codecpar = avctx->streams[i]->codecpar;
 
-            MPEG4AudioConfig m4ac;
-            int off = avpriv_mpeg4audio_get_config2(&m4ac, codecpar->extradata, codecpar->extradata_size, 1, avctx);
-
             aac_profile.nPortIndex = port_idx;
             aac_profile.nSampleRate = codecpar->sample_rate;
             aac_profile.nBitRate = codecpar->bit_rate;
             aac_profile.nChannels = codecpar->channels;
-            aac_profile.eAACProfile = m4ac.object_type;
-            aac_profile.eAACStreamFormat = avctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_AAC ? OMX_AUDIO_AACStreamFormatRAW : OMX_AUDIO_AACStreamFormatMP4LATM;
+
+            MPEG4AudioConfig m4ac;
+            const int off = avpriv_mpeg4audio_get_config2(&m4ac, codecpar->extradata, codecpar->extradata_size, 1, avctx);
+            const int raw_aac = codecpar->extradata && codecpar->extradata_size && off > 0;
+
+            if (raw_aac)
+                aac_profile.eAACProfile = m4ac.object_type;
+            aac_profile.eAACStreamFormat = codecpar->codec_id == AV_CODEC_ID_AAC ?
+                (raw_aac ? OMX_AUDIO_AACStreamFormatRAW : OMX_AUDIO_AACStreamFormatMP4ADTS) : OMX_AUDIO_AACStreamFormatMP4LATM;
 
             ret = OMX_SetParameter(s->component, OMX_IndexParamAudioAac, &aac_profile);
             OMX_ERROR_CHECK(ret, avctx);
@@ -403,7 +407,6 @@ static int mpegts_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
     int audio_pkt = (st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 || st->codecpar->codec_id == AV_CODEC_ID_AAC ||
                      st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM || st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2);
 
-
     if (!(video_pkt || audio_pkt)) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported format of input stream: %s\n",
                avcodec_descriptor_get(st->codecpar->codec_id)->name);
@@ -496,7 +499,7 @@ static int mpegts_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt
                st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 ||
                st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2) {
     } else {
-        av_log(s, AV_LOG_ERROR, "Currently supported formats are AVC, HEVC, MPEG-2, AAC, AC3, EAC3 only.\n But input AV_CODEC_ID = %d\n", st->codecpar->codec_id);
+        av_log(s, AV_LOG_ERROR, "Currently supported formats are AVC, HEVC, MPEG-2, AAC, MPEG Layer 1/2 Audio, AC3, EAC3 only.\n But input AV_CODEC_ID = %d\n", st->codecpar->codec_id);
         ret = AVERROR_MUXER_NOT_FOUND;
     }
 

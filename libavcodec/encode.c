@@ -241,7 +241,10 @@ static int encode_simple_internal(AVCodecContext *avctx, AVPacket *avpkt)
             /* NOTE: if we add any audio encoders which output non-keyframe packets,
              *       this needs to be moved to the encoders, but for now we can do it
              *       here to simplify things */
-            avpkt->flags |= AV_PKT_FLAG_KEY;
+            if (!(avctx->codec->id == AV_CODEC_ID_AAC && avctx->profile == FF_PROFILE_AAC_XHE)) {
+                avpkt->flags |= AV_PKT_FLAG_KEY;
+            }
+
             avpkt->dts = avpkt->pts;
         }
     }

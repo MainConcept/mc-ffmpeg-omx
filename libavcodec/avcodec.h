@@ -2384,11 +2384,16 @@ typedef struct AVCodecContext {
      */
     int (*get_encode_buffer)(struct AVCodecContext *s, AVPacket *pkt, int flags);
 
-/*
-* Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE only.
-*/
+    /*
+    * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE only.
+    */
     int roll_distance;
     int64_t rap_interval;
+
+    /**
+    * Audio only. mhm1Enc/MPEG_3D_AUDIO only.
+    */
+    uint8_t* compat_profiles;
 
 } AVCodecContext;
 

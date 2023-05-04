@@ -1,6 +1,6 @@
 /*
  * OMX Common
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -55,7 +55,7 @@
 
 #include <float.h>
 
-static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t* duration_omx)
+static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t* duration_omx, uint32_t* compat_profile)
 {
     uint64_t offset = (buf->nOffset + buf->nFilledLen + 0x03L) & ~0x03L;
 
@@ -67,6 +67,8 @@ static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t*
                 case OMX_ExtraDataDTS:
                     *dts_omx = from_omx_ticks(((TIMESTAMP_PARAM*)pExtra->data)->DTS);
                     *duration_omx = from_omx_ticks(((TIMESTAMP_PARAM*)pExtra->data)->duration);
+                case OMX_ExtraDataCompatProfile:
+                    *compat_profile = ((OMX_COMPAT_PROFILE*)pExtra->data)->compat_profile;
                 default:
                     break;
             }
@@ -76,7 +78,6 @@ static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t*
     }
     return 0;
 }
-
 
 static int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHEADERTYPE* buf)
 {
@@ -119,7 +120,20 @@ static int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHE
 
         int64_t dts_omx = AV_NOPTS_VALUE;
         int64_t duration_omx = AV_NOPTS_VALUE;
-        parse_extradata(buf, &dts_omx, &duration_omx);
+        uint32_t compat_profile = 0;
+        parse_extradata(buf, &dts_omx, &duration_omx, &compat_profile);
+
+        if (compat_profile > 0 && (!avctx->compat_profiles || avctx->compat_profiles && avctx->compat_profiles[0] == 1 && avctx->compat_profiles[1] != compat_profile)) {
+            avctx->compat_profiles = av_realloc_array(avctx->compat_profiles, 2, sizeof(avctx->compat_profiles[0]));
+            avctx->compat_profiles[0] = 1;
+            avctx->compat_profiles[1] = compat_profile;
+
+            // I consider following code as workaround.
+            uint32_t extradata_size = sizeof(avctx->compat_profiles[0]) * (avctx->compat_profiles[0]+1);
+            uint8_t* p = av_packet_new_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, extradata_size);
+            avpkt->flags |= AV_PKT_DATA_NEW_EXTRADATA;
+            memcpy(p, avctx->compat_profiles, extradata_size);
+        }
 
         if (dts_omx != AV_NOPTS_VALUE) {
             getting_dts = (llabs(dts_omx) * (int64_t) avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
@@ -193,6 +207,121 @@ static int fill_extradata_sei_buf(OMX_BUFFERHEADERTYPE* buf, uint8_t* sei_data, 
     return 0;
 }
 
+static int fill_extradata_buf(OMX_BUFFERHEADERTYPE* buf, const uint8_t* sei_data, uint64_t sei_size, const OMX_COLOR_ASPECT* color_aspect)
+{
+    uint64_t offset = av_omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
+
+    if (sei_data) {
+        OMX_OTHER_EXTRADATATYPE *seicc_ext = buf->pBuffer + offset;
+        INIT_STRUCT(*seicc_ext);
+
+        seicc_ext->nSize += sei_size;
+        seicc_ext->nDataSize = sei_size;
+        seicc_ext->eType = OMX_ExtraDataA53CC;
+
+        memcpy(seicc_ext->data, sei_data, sei_size);
+
+        offset += av_omx_get_ext_pos(buf->pBuffer + offset, seicc_ext->nSize);
+    }
+
+    if (color_aspect) {
+        OMX_OTHER_EXTRADATATYPE *color_ext = buf->pBuffer + offset;
+        INIT_STRUCT(*color_ext);
+
+        color_ext->nSize += sizeof(*color_aspect);
+        color_ext->nDataSize = sizeof(*color_aspect);
+        color_ext->eType = OMX_ExtraDataColorAspect;
+
+        memcpy(color_ext->data, color_aspect, sizeof(*color_aspect));
+
+        offset += av_omx_get_ext_pos(buf->pBuffer + offset, color_ext->nSize);
+    }
+
+    OMX_OTHER_EXTRADATATYPE last_empty_extra;
+    INIT_STRUCT(last_empty_extra);
+    last_empty_extra.eType = OMX_ExtraDataNone;
+
+    memcpy(buf->pBuffer + offset, (uint8_t*)&last_empty_extra, last_empty_extra.nSize);
+    buf->nFlags |= OMX_BUFFERFLAG_EXTRADATA;
+
+    // if (buf->nAllocLen - (offset + sei_data->size) > 0) {}
+    // else {/*AVLOG?*/}
+    return 0;
+}
+
+OMX_COLOR_MATRIX_COEFFS AV_to_OMX_colorspace(enum AVColorSpace colorspace)
+{
+    switch (colorspace) {
+        case AVCOL_SPC_RGB:             return MatrixRGB;
+        case AVCOL_SPC_BT709:           return MatrixBT709_6;
+        case AVCOL_SPC_UNSPECIFIED:     return MatrixUnspecified;
+        case AVCOL_SPC_FCC:             return MatrixFCC;
+        case AVCOL_SPC_BT470BG:         return MatrixBT470_6BG;
+        case AVCOL_SPC_SMPTE170M:       return MatrixBT601_6;
+        case AVCOL_SPC_SMPTE240M:       return MatrixSMPTE240M;
+        case AVCOL_SPC_YCOCG:           return MatrixYCGCO;
+        case AVCOL_SPC_BT2020_CL:       return MatrixBT2020Constant;
+        case AVCOL_SPC_BT2020_NCL:      return MatrixBT2020;
+    }
+    return MatrixUnspecified;
+}
+
+OMX_COLOR_RANGE AV_to_OMX_color_range(const enum AVColorRange fmt)
+{
+    switch (fmt) {
+        case AVCOL_RANGE_UNSPECIFIED:   return RangeUnspecified;
+        case AVCOL_RANGE_MPEG:          return RangeLimited;
+        case AVCOL_RANGE_JPEG:          return RangeFull;
+    }
+    return RangeUnspecified;
+}
+
+OMX_COLOR_PRIMARIES AV_to_OMX_color_primaries(const enum AVColorPrimaries fmt)
+{
+    switch (fmt) {
+        case AVCOL_PRI_BT709:           return PrimariesBT709_6;
+        case AVCOL_PRI_RESERVED0:       return PrimariesGenericFilm; // ?
+        case AVCOL_PRI_UNSPECIFIED:     return PrimariesUnspecified;
+        case AVCOL_PRI_RESERVED:        return PrimariesOther;
+        case AVCOL_PRI_BT470M:          return PrimariesBT470_6M;
+        case AVCOL_PRI_BT470BG:         return PrimariesBT470_6BG;
+        case AVCOL_PRI_SMPTE170M:       return Primaries_SMPTE_170M;
+        case AVCOL_PRI_SMPTE240M:       return Primaries_SMPTE_240M;
+        case AVCOL_PRI_FILM:            return PrimariesGenericFilm;
+        case AVCOL_PRI_BT2020:          return PrimariesBT2020;
+        case AVCOL_PRI_SMPTEST428_1:    return Primaries_SMPTEST428_1;
+    }
+
+    return PrimariesUnspecified;
+}
+
+OMX_COLOR_TRANSFER AV_to_OMX_color_trc(const enum AVColorTransferCharacteristic fmt)
+{
+    switch (fmt) {
+        case AVCOL_TRC_UNSPECIFIED:   return TransferUnspecified;
+        case AVCOL_TRC_SMPTE170M:     return TransferSMPTE170M;
+        case AVCOL_TRC_SMPTEST2084:   return TransferST2084;
+        case AVCOL_TRC_SMPTE240M:     return TransferSMPTE240M;
+        case AVCOL_TRC_SMPTEST428_1:  return TransferST428;
+        case AVCOL_TRC_LINEAR:        return TransferLinear;
+        case AVCOL_TRC_BT2020_10:     return Transfer_BT2020_10;
+        case AVCOL_TRC_BT2020_12:     return Transfer_BT2020_12;
+        case AVCOL_TRC_IEC61966_2_1:  return Transfer_IEC61966_2_1;
+        case AVCOL_TRC_IEC61966_2_4:  return Transfer_IEC61966_2_4;
+        case AVCOL_TRC_BT1361_ECG:    return Transfer_BT1361_0;
+    }
+
+    return TransferUnspecified;
+}
+
+static void fill_coloraspect(const AVFrame *fr, OMX_COLOR_ASPECT* color_aspect)
+{
+    color_aspect->mMatrixCoeffs = AV_to_OMX_colorspace(fr->colorspace);
+    color_aspect->mPrimaries = AV_to_OMX_color_primaries(fr->color_primaries);
+    color_aspect->mRange = AV_to_OMX_color_range(fr->color_range);
+    color_aspect->mTransfer = AV_to_OMX_color_trc(fr->color_trc);
+}
+
 static int frame_to_buffer_video(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* buf, const AVFrame *fr)
 {
     OMXComponentContext *s = avctx->priv_data;
@@ -242,13 +371,17 @@ static int frame_to_buffer_video(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* bu
     if (fr->pict_type == AV_PICTURE_TYPE_I) // ffmpeg set this type on input frame when -force-key_frames is used ("-force_key_frames expr:gte\(t,n_forced*2\)")
         buf->nFlags |= OMX_BUFFERFLAG_SYNCFRAME;
 
-    if (s->a53_cc) {
-        void* sei_data;
-        size_t sei_size = 0;
-        int ret = ff_alloc_a53_sei(fr, 0, &sei_data, &sei_size);
-        if(sei_size)
-            fill_extradata_sei_buf(buf, (uint8_t*)sei_data, sei_size);
-    }
+    void* sei_data = NULL;
+    size_t sei_size = 0;
+
+    int ret = 0;
+
+    if (s->a53_cc)
+        ret = ff_alloc_a53_sei(fr, 0, &sei_data, &sei_size);
+
+    OMX_COLOR_ASPECT color_aspect;
+    fill_coloraspect(fr, &color_aspect);
+    fill_extradata_buf(buf, (uint8_t*)sei_data, sei_size, &color_aspect);
 
     return 0;
 }
@@ -358,4 +491,3 @@ int omx_cmpnt_codec_end(AVCodecContext *avctx)
 
     return 0;
 }
- 

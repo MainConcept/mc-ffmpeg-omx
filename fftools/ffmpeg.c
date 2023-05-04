@@ -3450,6 +3450,38 @@ static int init_output_stream_encode(OutputStream *ost, AVFrame *frame)
             enc_ctx->color_trc              = frame->color_trc;
             enc_ctx->colorspace             = frame->colorspace;
             enc_ctx->chroma_sample_location = frame->chroma_location;
+
+            // copy HDR-10 related side data
+            for (int i=0; i<frame->nb_side_data; i++) {
+                AVFrameSideData* fsd = frame->side_data[i];
+                if (fsd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA ||
+                    fsd->type == AV_FRAME_DATA_CONTENT_LIGHT_LEVEL) {
+
+                    AVPacketSideData* tmp = av_realloc_array(enc_ctx->coded_side_data, enc_ctx->nb_coded_side_data+1, sizeof(*tmp));
+
+                    if (!tmp)
+                        return AVERROR(ENOMEM);
+
+                    enc_ctx->coded_side_data = tmp;
+
+                    AVPacketSideData* sd = &enc_ctx->coded_side_data[enc_ctx->nb_coded_side_data];
+
+                    switch (fsd->type) {
+                        case AV_FRAME_DATA_MASTERING_DISPLAY_METADATA:
+                            sd->type = AV_PKT_DATA_MASTERING_DISPLAY_METADATA;
+                            break;
+                        case AV_FRAME_DATA_CONTENT_LIGHT_LEVEL:
+                            sd->type = AV_PKT_DATA_CONTENT_LIGHT_LEVEL;
+                            break;
+                    }
+
+                    sd->data = av_mallocz(fsd->size);
+                    memcpy(sd->data, fsd->data, fsd->size);
+                    sd->size = fsd->size;
+
+                    enc_ctx->nb_coded_side_data++;
+                }
+            }
         }
 
         enc_ctx->framerate = ost->frame_rate;

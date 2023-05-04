@@ -1,6 +1,6 @@
 /*
  * OMX Video encoder
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -63,6 +63,7 @@ OMX_COLOR_FORMATTYPE pix_format_to_OMX(enum AVPixelFormat fmt);
 int omx_set_pic_param(AVCodecContext *avctx);
 int level_to_omx(const char* level);
 int omx_set_avc_param(AVCodecContext *avctx, const char* level);
+int omx_set_mpeg2_param(AVCodecContext *avctx, const char* level);
 
 int omx_get_codec_config(AVCodecContext *avctx, OMX_HANDLETYPE component);
 

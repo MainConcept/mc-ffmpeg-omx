@@ -126,7 +126,8 @@ typedef struct OMXComponentContext {
     OMX_U32 port_num;
     OMX_BOOL port_disabled[MAX_PORT_NUMBER];
 
-    AVFrame *frame;
+    AVFrame*        frame;
+    OMX_BOOL        swap_planes;
 
     pthread_mutex_t buffers_mutex[MAX_PORT_NUMBER];
     pthread_mutex_t buffers_cond_mutex;

@@ -1,6 +1,6 @@
 /*
- * OMX Video encoder
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * OMX Video HEVC decoder
+ * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -21,8 +21,8 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef AVCODEC_OMX_VIDEO_ENC_HEVC_H
-#define AVCODEC_OMX_VIDEO_ENC_HEVC_H
+#ifndef AVCODEC_OMX_VIDEO_DEC_HEVC_H
+#define AVCODEC_OMX_VIDEO_DEC_HEVC_H
 
 #include "omx_video_enc_common.h"
 
@@ -46,4 +46,4 @@ typedef struct OMXHEVCDecComponentContext {
     int in_cnt, out_cnt;
 } OMXHEVCDecComponentContext;
 
-#endif // AVCODEC_OMX_VIDEO_ENC_HEVC_H
+#endif // AVCODEC_OMX_VIDEO_DEC_HEVC_H

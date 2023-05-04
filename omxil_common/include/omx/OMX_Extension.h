@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -74,6 +74,11 @@
 #define OMX_COLOR_FormatYUV420PackedPlanar10bit VENDOR_COLOR_FORMAT(2)
 #define OMX_COLOR_FormatYUV422PackedPlanar10bit VENDOR_COLOR_FORMAT(3)
 #define OMX_COLOR_FormatBGRPackedPlanar10bit VENDOR_COLOR_FORMAT(4)
+#define OMX_COLOR_FormatYVU420PackedPlanar VENDOR_COLOR_FORMAT(5)
+#define OMX_COLOR_FormatYVU422PackedPlanar VENDOR_COLOR_FORMAT(6)
+#define OMX_COLOR_FormatYVU420PackedPlanar10bit VENDOR_COLOR_FORMAT(7)
+#define OMX_COLOR_FormatYVU422PackedPlanar10bit VENDOR_COLOR_FORMAT(8)
+
 
 /**
  * Custom parameter structures
@@ -161,7 +166,6 @@ typedef struct OMX_AUDIO_PARAM_XHEAACTYPE {
     OMX_U8  CodecConfig[1];
 } OMX_AUDIO_PARAM_XHEAACTYPE;
 
-
 /** Video codec config params */
 typedef struct OMX_VIDEO_PARAM_CODECCONFIGTYPE {
     OMX_U32 nSize;                 /**< size of the structure in bytes */
@@ -171,64 +175,6 @@ typedef struct OMX_VIDEO_PARAM_CODECCONFIGTYPE {
     OMX_U32 nCodecConfigSizeUsed;
     OMX_U8  CodecConfig[1];
 } OMX_VIDEO_PARAM_CODECCONFIGTYPE;
-
-
-typedef enum OMX_INDEXTYPE_EXT {
-    OMX_IndexParamAudioDdp = 0x7f00007B,           /**< reference: OMX_AUDIO_PARAM_DDPTYPE */
-    OMX_IndexParamAudioXheaac = 0x7f00007C,        /**< reference: OMX_AUDIO_PARAM_XHEAACTYPE */
-    OMX_IndexParamVideoCodecConfig = 0x7f00007D,   /**< reference: OMX_VIDEO_PARAM_CODECCONFIGTYPE */
-} OMX_INDEXTYPE_EXT;
-/*
- * End of Dolby structures copied from https://github.com/raspberrypi/firmware/blob/master/opt/vc/include/IL/OMX_Audio.h
- */
-
-/*
- * OMX_NumericalDataFloat = 0x7F000001,
- * Was copied from https://github.com/LineageOS/android_frameworks_native/blob/lineage-18.1/headers/media_plugin/media/openmax/OMX_Types.h
- * It extends OMX_NUMERICALDATATYPE
- */
-typedef enum OMX_NUMERICALDATATYPE_EXT
-{
-    OMX_NumericalDataFloat = 0x7F000001
-} OMX_NUMERICALDATATYPE_EXT;
-
-typedef enum OMX_AUDIO_AACPROFILETYPE_EXT
-{
-    OMX_AUDIO_AACObjectXHE = 0x7F000001
-} OMX_AUDIO_AACPROFILETYPE_EXT;
-
-/*
- * it was taken here: https://review.carbonrom.org/plugins/gitiles/CarbonROM/android_hardware_qcom_media/+/fa202b9b18f17f7835fd602db5fff530e61112b4/msmcobalt/mm-core/inc/OMX_QCOMExtns.h
- * these are part of OMX1.2 but JB MR2 branch doesn't have them defined
- * OMX_IndexParamInterlaceFormat
- * OMX_INTERLACEFORMATTYPE
- */
-
-typedef struct OMX_INTERLACEFORMATTYPE {
-    OMX_U32 nSize;
-    OMX_VERSIONTYPE nVersion;
-    OMX_U32 nPortIndex;
-    OMX_U32 nFormat;//OMX_INTERLACETYPE
-    OMX_TICKS nTimeStamp;
-
-} OMX_INTERLACEFORMATTYPE;
-
-typedef enum OMX_INTERLACETYPE
-{
-    OMX_InterlaceFrameProgressive,
-    OMX_InterlaceInterleaveFrameTopFieldFirst,
-    OMX_InterlaceInterleaveFrameBottomFieldFirst,
-    OMX_InterlaceFrameTopFieldFirst,
-    OMX_InterlaceFrameBottomFieldFirst,
-    OMX_InterlaceInterleaveFieldTop,
-    OMX_InterlaceInterleaveFieldBottom
-} OMX_INTERLACES;
-
-typedef struct OMX_ASPECT_RATIO
-{
-    OMX_U32 aspectRatioX;
-    OMX_U32 aspectRatioY;
-} OMX_ASPECT_RATIO;
 
 
 /*
@@ -312,6 +258,24 @@ typedef enum  OMX_COLOR_STANDART {
     StandardOther = 0xff,
 }OMX_COLOR_STANDART;
 
+
+// According to annex A. of ST 2086 zero values for the ST2086 metadata is considered as "unknown"
+typedef struct OMX_COLOR_ST2086_METADATA {
+    OMX_U32 nMasteringDisplayMetadataPresent;
+    OMX_U32 nDisplayPrimariesX[3];                     // According to ST2086:2014 "shall be specified with four decimal places" so step for this value is 0.0001
+    OMX_U32 nDisplayPrimariesY[3];                     // According to ST2086:2014 "shall be specified with four decimal places" so step for this value is 0.0001
+    OMX_U32 nWhitePointX;                              // According to ST2086:2014 "shall be specified with four decimal places" so step for this value is 0.0001
+    OMX_U32 nWhitePointY;                              // According to ST2086:2014 "shall be specified with four decimal places" so step for this value is 0.0001
+    OMX_U32 nMaxDisplayMasteringLuminance;             // According to ST2086:2014 "shall be a multiple of 1 candela per square meter" so step for this value is 1
+    OMX_U32 nMinDisplayMasteringLuminance;             // According to ST2086:2014 "shall be a multiple of 0.0001 candela per square meter" so step for this value is 0.0001
+} OMX_COLOR_ST2086_METADATA;
+
+typedef struct OMX_COLOR_CONTENT_LIGHT_LEVEL {
+    OMX_U32 nContentLightLevelPresent;
+    OMX_U32 nMaxFALL;   // Step is 1 candela per sq meter
+    OMX_U32 nMaxCLL;    // Step is 1 candela per sq meter
+} OMX_COLOR_CONTENT_LIGHT_LEVEL;
+
 typedef struct OMX_COLOR_ASPECT {
     OMX_COLOR_RANGE mRange;                // IN/OUT
     OMX_COLOR_PRIMARIES mPrimaries;        // IN/OUT
@@ -319,6 +283,86 @@ typedef struct OMX_COLOR_ASPECT {
     OMX_COLOR_MATRIX_COEFFS mMatrixCoeffs; // IN/OUT
 } OMX_COLOR_ASPECT;
 
+/** Video colorimetry information */
+typedef struct OMX_VIDEO_PARAM_COLORIMETRYTYPE {
+    OMX_U32 nSize;                 /**< size of the structure in bytes */
+    OMX_VERSIONTYPE nVersion;      /**< OMX specification version information */
+    OMX_U32 nPortIndex;            /**< port that this structure applies to */
+    OMX_COLOR_RANGE eRange;
+    OMX_COLOR_PRIMARIES ePrimaries;
+    OMX_COLOR_TRANSFER eTransfer;
+    OMX_COLOR_MATRIX_COEFFS eMatrixCoeffs;
+    OMX_COLOR_ST2086_METADATA sMasteringDisplayMetadata;
+    OMX_COLOR_CONTENT_LIGHT_LEVEL sContentLightLevel;
+} OMX_VIDEO_PARAM_COLORIMETRYTYPE;
+
+typedef enum OMX_INDEXTYPE_EXT {
+    OMX_IndexParamAudioDdp = 0x7f00007B,           /**< reference: OMX_AUDIO_PARAM_DDPTYPE */
+    OMX_IndexParamAudioXheaac = 0x7f00007C,        /**< reference: OMX_AUDIO_PARAM_XHEAACTYPE */
+    OMX_IndexParamVideoCodecConfig = 0x7f00007D,   /**< reference: OMX_VIDEO_PARAM_CODECCONFIGTYPE */
+    OMX_IndexParamVideoColorimetry = 0x7f00007E,   /**< reference: OMX_VIDEO_PARAM_COLORIMETRYTYPE */
+} OMX_INDEXTYPE_EXT;
+/*
+ * End of Dolby structures copied from https://github.com/raspberrypi/firmware/blob/master/opt/vc/include/IL/OMX_Audio.h
+ */
+
+/*
+ * OMX_NumericalDataFloat = 0x7F000001,
+ * Was copied from https://github.com/LineageOS/android_frameworks_native/blob/lineage-18.1/headers/media_plugin/media/openmax/OMX_Types.h
+ * It extends OMX_NUMERICALDATATYPE
+ */
+typedef enum OMX_NUMERICALDATATYPE_EXT
+{
+    OMX_NumericalDataFloat = 0x7F000001
+} OMX_NUMERICALDATATYPE_EXT;
+
+typedef enum OMX_AUDIO_AACPROFILETYPE_EXT
+{
+    OMX_AUDIO_AACObjectXHE = 0x7F000001
+} OMX_AUDIO_AACPROFILETYPE_EXT;
+
+
+typedef enum OMX_AUDIO_CODINGTYPE_EXT
+{
+    OMX_AUDIO_CodingMPEGH = OMX_AUDIO_CodingVendorStartUnused + 1
+} OMX_AUDIO_CODINGTYPE_EXT;
+
+/*
+ * it was taken here: https://review.carbonrom.org/plugins/gitiles/CarbonROM/android_hardware_qcom_media/+/fa202b9b18f17f7835fd602db5fff530e61112b4/msmcobalt/mm-core/inc/OMX_QCOMExtns.h
+ * these are part of OMX1.2 but JB MR2 branch doesn't have them defined
+ * OMX_IndexParamInterlaceFormat
+ * OMX_INTERLACEFORMATTYPE
+ */
+
+typedef struct OMX_INTERLACEFORMATTYPE {
+    OMX_U32 nSize;
+    OMX_VERSIONTYPE nVersion;
+    OMX_U32 nPortIndex;
+    OMX_U32 nFormat;//OMX_INTERLACETYPE
+    OMX_TICKS nTimeStamp;
+
+} OMX_INTERLACEFORMATTYPE;
+
+typedef enum OMX_INTERLACETYPE
+{
+    OMX_InterlaceFrameProgressive,
+    OMX_InterlaceInterleaveFrameTopFieldFirst,
+    OMX_InterlaceInterleaveFrameBottomFieldFirst,
+    OMX_InterlaceFrameTopFieldFirst,
+    OMX_InterlaceFrameBottomFieldFirst,
+    OMX_InterlaceInterleaveFieldTop,
+    OMX_InterlaceInterleaveFieldBottom
+} OMX_INTERLACES;
+
+typedef struct OMX_ASPECT_RATIO
+{
+    OMX_U32 aspectRatioX;
+    OMX_U32 aspectRatioY;
+} OMX_ASPECT_RATIO;
+
+typedef struct OMX_COMPAT_PROFILE {
+    OMX_U32 compat_profile;
+} OMX_COMPAT_PROFILE;
 
 /**
  * Custom parameter indices
@@ -339,5 +383,6 @@ typedef struct OMX_COLOR_ASPECT {
 #define OMX_ExtraDataInterlaceFormat VENDOR_EXTRADATATYPE(4)/**< reference: OMX_OTHER_EXTRADATATYPE */
 #define OMX_ExtraDataVideoPictureType VENDOR_EXTRADATATYPE(5)/**< reference: OMX_OTHER_EXTRADATATYPE */
 #define OMX_ExtraDataColorAspect VENDOR_EXTRADATATYPE(6)/**< reference: OMX_OTHER_EXTRADATATYPE */
+#define OMX_ExtraDataCompatProfile VENDOR_EXTRADATATYPE(7)/**< reference: OMX_COMPAT_PROFILE */
 
 #endif // OMXIL_COMMON_INCLUDE_OMX_OMX_EXTENSION_H

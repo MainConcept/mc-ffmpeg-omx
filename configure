@@ -350,6 +350,8 @@ External library support:
   --enable-omx_dec_hevc    enable OpenMAX HEVC decoder [no]
   --enable-omx_enc_xheaac  enable OpenMAX xHE-AAC encoder [no]
   --enable-omx_enc_vvc     enable OpenMAX VVC encoder [no]
+  --enable-omx_enc_mpegh   enable OpenMAX MPEG-H encoder [no]
+  --enable-omx_enc_mp2v    enable OpenMAX MPEG-2 video encoder [no]
   --enable-rkmpp           enable Rockchip Media Process Platform code [no]
   --disable-v4l2-m2m       disable V4L2 mem2mem code [autodetect]
   --disable-vaapi          disable Video Acceleration API (mainly Unix/Intel) code [autodetect]
@@ -1841,6 +1843,8 @@ EXTERNAL_LIBRARY_LIST="
     omx_enc_hevc
     omx_dec_hevc
     omx_enc_vvc
+    omx_enc_mpegh
+    omx_enc_mp2v
 "
 
 HWACCEL_AUTODETECT_LIBRARY_LIST="
@@ -3058,6 +3062,8 @@ hevc_omx_encoder_select="omx_enc_hevc"
 hevc_omx_decoder_select="omx_dec_hevc"
 xheaac_omx_encoder_select="omx_enc_xheaac"
 vvc_omx_encoder_select="omx_enc_vvc"
+mpegh_omx_encoder_select="omx_enc_mpegh"
+mp2v_omx_encoder_select="omx_enc_mp2v"
 
 mpegts_omx_muxer_select="omx_ts_mux"
 mxf_omx_muxer_select="omx_mxf_mux"
@@ -3067,7 +3073,7 @@ mediafoundation_deps="mftransform_h MFCreateAlignedMemoryBuffer"
 mediafoundation_extralibs="-lmfplat -lmfuuid -lole32 -lstrmiids"
 omx_deps="libdl pthreads"
 omx_rpi_select="omx"
-omx_comp_if_any="omx_enc_avc omx_dec_avc omx_enc_hevc omx_dec_hevc omx_enc_xheaac omx_enc_vvc omx_ts_mux omx_mxf_mux"
+omx_comp_if_any="omx_enc_avc omx_dec_avc omx_enc_hevc omx_dec_hevc omx_enc_xheaac omx_enc_vvc omx_enc_mpegh omx_enc_mp2v omx_ts_mux omx_mxf_mux"
 qsv_deps="libmfx"
 qsvdec_select="qsv"
 qsvenc_select="qsv"
@@ -6554,6 +6560,8 @@ enabled omx_enc_xheaac    && require_headers OMX_Core.h
 enabled omx_enc_hevc      && require_headers OMX_Core.h
 enabled omx_dec_hevc      && require_headers OMX_Core.h
 enabled omx_enc_vvc       && require_headers OMX_Core.h
+enabled omx_enc_mpegh     && require_headers OMX_Core.h
+enabled omx_enc_mp2v      && require_headers OMX_Core.h
 enabled openssl           && { check_pkg_config openssl openssl openssl/ssl.h OPENSSL_init_ssl ||
                                check_pkg_config openssl openssl openssl/ssl.h SSL_library_init ||
                                check_lib openssl openssl/ssl.h OPENSSL_init_ssl -lssl -lcrypto ||

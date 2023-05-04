@@ -3,7 +3,7 @@
  * Copyright (c) 2003 Thomas Raivio
  * Copyright (c) 2004 Gildas Bazin <gbazin at videolan dot org>
  * Copyright (c) 2009 Baptiste Coudurier <baptiste dot coudurier at gmail dot com>
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * This file is part of FFmpeg.
  *
@@ -301,6 +301,20 @@ static int mov_write_sdtp_tag(AVIOContext *pb, MOVTrack *track)
                     (reference << 2) | redundancy);
     }
     return update_size(pb, pos);
+}
+
+static int mov_write_mhaP_tag(AVIOContext *pb, MOVTrack *track)
+{
+    if (!track->par->compat_profiles) return 0;
+    int num = track->par->compat_profiles[0];
+
+    avio_wb32(pb, 9 + num); /* size */
+    ffio_wfourcc(pb, "mhaP");
+    avio_w8(pb, num);
+    for (int i = 1; i <= num; i++) {
+        avio_w8(pb, track->par->compat_profiles[i]);
+    }
+    return 9 + num;
 }
 
 static int mov_write_amr_tag(AVIOContext *pb, MOVTrack *track)
@@ -1180,6 +1194,8 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
                 track->par->codec_id == AV_CODEC_ID_ALAC ||
                 track->par->codec_id == AV_CODEC_ID_OPUS) {
                 avio_wb16(pb, track->par->channels);
+            } else if (track->par->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+                avio_wb16(pb, 0);
             } else {
                 avio_wb16(pb, 2);
             }
@@ -1230,6 +1246,8 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
         ret = mov_write_wave_tag(s, pb, track);
     else if (track->tag == MKTAG('m','p','4','a'))
         ret = mov_write_esds_tag(pb, track);
+    else if (track->par->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO)
+        ret = mov_write_mhaP_tag(pb, track);
     else if (track->par->codec_id == AV_CODEC_ID_AMR_NB)
         ret = mov_write_amr_tag(pb, track);
     else if (track->par->codec_id == AV_CODEC_ID_AC3)
@@ -6059,6 +6077,17 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
         }
     }
 
+    // I consider following code as workaround.
+    if (trk->par->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+        buffer_size_t side_size;
+        uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
+        if (side && side_size == sizeof(par->compat_profiles[0]) * 2) {
+            if (!par->compat_profiles)
+                par->compat_profiles = av_realloc_array(par->compat_profiles, 2, sizeof(par->compat_profiles[0]));
+            memcpy(par->compat_profiles, side, side_size);
+        }
+    }
+
     if (!pkt->size) {
         if (trk->start_dts == AV_NOPTS_VALUE && trk->frag_discont) {
             trk->start_dts = pkt->dts;
@@ -6082,7 +6111,7 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
              par->codec_type == AVMEDIA_TYPE_VIDEO &&
              trk->entry && pkt->flags & AV_PKT_FLAG_KEY) ||
             (mov->flags & FF_MOV_FLAG_FRAG_KEYFRAME &&
-             par->codec_type == AVMEDIA_TYPE_AUDIO && trk->par->codec_id == AV_CODEC_ID_AAC &&
+             par->codec_type == AVMEDIA_TYPE_AUDIO && (trk->par->codec_id == AV_CODEC_ID_AAC || trk->par->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) &&
              trk->entry && (pkt->audioframe_flags & AV_PKT_AUDIOFRAME_FLAG_IPF || pkt->audioframe_flags & AV_PKT_AUDIOFRAME_FLAG_AAC_RAP)) ||
             (mov->flags & FF_MOV_FLAG_FRAG_EVERY_FRAME)) {
         if (frag_duration >= mov->min_fragment_duration) {
@@ -6665,6 +6694,9 @@ static int mov_init(AVFormatContext *s)
         for (i = 0; i < s->nb_streams; i++) {
             AVStream *st = s->streams[i];
             AVDictionaryEntry *t = global_tcr;
+            if (st->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+                mov->flags |= FF_MOV_FLAG_DELAY_MOOV;
+            }
             if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
                 (t || (t=av_dict_get(st->metadata, "timecode", NULL, 0)))) {
                 AVTimecode tc;

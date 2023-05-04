@@ -128,6 +128,7 @@
 #define STREAM_TYPE_METADATA        0x15
 #define STREAM_TYPE_VIDEO_H264      0x1b
 #define STREAM_TYPE_VIDEO_HEVC      0x24
+#define STREAM_TYPE_AUDIO_MHM1      0x2d
 #define STREAM_TYPE_VIDEO_CAVS      0x42
 #define STREAM_TYPE_VIDEO_VC1       0xea
 #define STREAM_TYPE_VIDEO_DIRAC     0xd1

@@ -1082,6 +1082,8 @@ OBJS-$(CONFIG_HEVC_OMX_ENCODER)           += omx_video_enc_hevc.o omx_common.o o
 OBJS-$(CONFIG_HEVC_OMX_DECODER)           += omx_video_dec_hevc.o omx_common.o omx_video_enc_common.o
 OBJS-$(CONFIG_XHEAAC_OMX_ENCODER)         += omx_audio_enc_heaac.o omx_common.o omx_audio_enc_common.o
 OBJS-$(CONFIG_VVC_OMX_ENCODER)            += omx_video_enc_vvc.o omx_common.o omx_video_enc_common.o
+OBJS-$(CONFIG_MPEGH_OMX_ENCODER)          += omx_audio_enc_mpegh.o omx_common.o omx_audio_enc_common.o
+OBJS-$(CONFIG_MP2V_OMX_ENCODER)           += omx_video_enc_mp2v.o omx_common.o omx_video_enc_common.o
 
 # parsers
 OBJS-$(CONFIG_AAC_LATM_PARSER)         += latm_parser.o

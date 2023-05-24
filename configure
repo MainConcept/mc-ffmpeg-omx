@@ -352,6 +352,8 @@ External library support:
   --enable-omx_enc_vvc     enable OpenMAX VVC encoder [no]
   --enable-omx_enc_mpegh   enable OpenMAX MPEG-H encoder [no]
   --enable-omx_enc_mp2v    enable OpenMAX MPEG-2 video encoder [no]
+  --enable-omx_ts_mux      enable OpenMAX TS muxer [no]
+  --enable-omx_mxf_mux     enable OpenMAX MXF muxer [no]
   --enable-rkmpp           enable Rockchip Media Process Platform code [no]
   --disable-v4l2-m2m       disable V4L2 mem2mem code [autodetect]
   --disable-vaapi          disable Video Acceleration API (mainly Unix/Intel) code [autodetect]
@@ -1845,6 +1847,8 @@ EXTERNAL_LIBRARY_LIST="
     omx_enc_vvc
     omx_enc_mpegh
     omx_enc_mp2v
+    omx_ts_mux
+    omx_mxf_mux
 "
 
 HWACCEL_AUTODETECT_LIBRARY_LIST="
@@ -6562,6 +6566,8 @@ enabled omx_dec_hevc      && require_headers OMX_Core.h
 enabled omx_enc_vvc       && require_headers OMX_Core.h
 enabled omx_enc_mpegh     && require_headers OMX_Core.h
 enabled omx_enc_mp2v      && require_headers OMX_Core.h
+enabled omx_ts_mux        && require_headers OMX_Core.h
+enabled omx_mxf_mux       && require_headers OMX_Core.h
 enabled openssl           && { check_pkg_config openssl openssl openssl/ssl.h OPENSSL_init_ssl ||
                                check_pkg_config openssl openssl openssl/ssl.h SSL_library_init ||
                                check_lib openssl openssl/ssl.h OPENSSL_init_ssl -lssl -lcrypto ||

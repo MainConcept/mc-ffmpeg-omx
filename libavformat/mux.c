@@ -597,6 +597,9 @@ static void guess_pkt_duration(AVFormatContext *s, AVStream *st, AVPacket *pkt)
     if (pkt->duration)
         return;
 
+    if (!pkt->duration && st->codecpar->codec_id == AV_CODEC_ID_AAC) // last packet zero duration is allowed for AAC
+        return;
+
     switch (st->codecpar->codec_type) {
     case AVMEDIA_TYPE_VIDEO:
         if (st->avg_frame_rate.num > 0 && st->avg_frame_rate.den > 0) {
@@ -801,8 +804,10 @@ static int prepare_input_packet(AVFormatContext *s, AVStream *st, AVPacket *pkt)
     }
 #endif
     /* update flags */
-    if (sti->is_intra_only)
-        pkt->flags |= AV_PKT_FLAG_KEY;
+    if (sti->is_intra_only &&
+        st->codecpar->profile != FF_PROFILE_AAC_XHE &&
+        st->codecpar->codec_id != AV_CODEC_ID_MPEGH_3D_AUDIO)
+            pkt->flags |= AV_PKT_FLAG_KEY;
 
     if (!pkt->data && !pkt->side_data_elems) {
         /* Such empty packets signal EOS for the BSF API; so sanitize
@@ -831,6 +836,8 @@ int ff_interleave_add_packet(AVFormatContext *s, AVPacket *pkt,
         av_packet_unref(pkt);
         return AVERROR(ENOMEM);
     }
+    this_pktl->pkt.audioframe_flags = pkt->audioframe_flags;
+
     if ((ret = av_packet_make_refcounted(pkt)) < 0) {
         av_free(this_pktl);
         av_packet_unref(pkt);

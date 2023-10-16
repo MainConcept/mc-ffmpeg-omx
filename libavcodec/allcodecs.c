@@ -1,6 +1,7 @@
 /*
  * Provide registration of all codecs, parsers and bitstream filters for libavcodec.
  * Copyright (c) 2002 Fabrice Bellard
+ * Copyright (c) 2023 MainConcept GmbH or its affiliates.
  *
  * This file is part of FFmpeg.
  *
@@ -885,6 +886,14 @@ extern const FFCodec ff_vp9_mediacodec_decoder;
 extern const FFCodec ff_vp9_qsv_decoder;
 extern const FFCodec ff_vp9_vaapi_encoder;
 extern const FFCodec ff_vp9_qsv_encoder;
+extern const FFCodec ff_avc_omx_encoder;
+extern const FFCodec ff_hevc_omx_encoder;
+extern const FFCodec ff_avc_omx_decoder;
+extern const FFCodec ff_hevc_omx_decoder;
+extern const FFCodec ff_xheaac_omx_encoder;
+extern const FFCodec ff_vvc_omx_encoder;
+extern const FFCodec ff_mpegh_omx_encoder;
+extern const FFCodec ff_mp2v_omx_encoder;
 
 // null codecs
 extern const FFCodec ff_vnull_decoder;

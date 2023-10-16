@@ -259,6 +259,18 @@ const FFOutputFormat ff_eac3_muxer = {
     .write_packet      = ff_raw_write_packet,
     .p.flags           = AVFMT_NOTIMESTAMPS,
 };
+
+FFOutputFormat ff_ec3_muxer = {
+        .p.name            = "ec3",
+        .p.long_name       = NULL_IF_CONFIG_SMALL("raw E-AC-3"),
+        .p.mime_type       = "audio/x-eac3",
+        .p.extensions      = "ec3",
+        .p.audio_codec     = AV_CODEC_ID_EAC3,
+        .p.video_codec     = AV_CODEC_ID_NONE,
+        .write_header      = force_one_stream,
+        .write_packet      = ff_raw_write_packet,
+        .p.flags           = AVFMT_NOTIMESTAMPS,
+};
 #endif
 
 #if CONFIG_G722_MUXER
@@ -398,6 +410,51 @@ const FFOutputFormat ff_hevc_muxer = {
     .write_packet      = ff_raw_write_packet,
     .check_bitstream   = hevc_check_bitstream,
     .p.flags           = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
+#if CONFIG_VVC_MUXER
+static int vvc_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt)
+{
+    return 1;
+
+//    AVStream *st = s->streams[0];
+//    if (pkt->size >= 5 && AV_RB32(pkt->data) != 0x0000001 &&
+//        AV_RB24(pkt->data) != 0x000001)
+//        return ff_stream_add_bitstream_filter(st, "vvc_mp4toannexb", NULL); // Somehow this *_mp4toannexb doesn't look trivial, so let's implement it later
+//    return 1;
+}
+
+FFOutputFormat ff_vvc_muxer = {
+        .p.name            = "vvc",
+        .p.long_name       = NULL_IF_CONFIG_SMALL("raw VVC video"),
+        .p.extensions      = "vvc,h266,266",
+        .p.audio_codec     = AV_CODEC_ID_NONE,
+        .p.video_codec     = AV_CODEC_ID_VVC,
+        .init              = force_one_stream,
+        .write_packet      = ff_raw_write_packet,
+        .check_bitstream   = vvc_check_bitstream,
+        .p.flags           = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
+#if CONFIG_MPEGH_MUXER
+static int mpegh_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt)
+{
+    // TODO: Should we add some headers?
+    return 1;
+}
+
+FFOutputFormat ff_mpegh_muxer = {
+        .p.name            = "mpegh",
+        .p.long_name       = NULL_IF_CONFIG_SMALL("raw MPEG-H audio"),
+        .p.extensions      = "mpegh",
+        .p.audio_codec     = AV_CODEC_ID_MPEGH_3D_AUDIO,
+        .p.video_codec     = AV_CODEC_ID_NONE,
+        .init              = force_one_stream,
+        .write_packet      = ff_raw_write_packet,
+        .check_bitstream   = mpegh_check_bitstream,
+        .p.flags           = AVFMT_NOTIMESTAMPS,
 };
 #endif
 

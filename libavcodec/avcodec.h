@@ -1574,6 +1574,7 @@ typedef struct AVCodecContext {
 #define FF_PROFILE_AAC_HE_V2 28
 #define FF_PROFILE_AAC_LD   22
 #define FF_PROFILE_AAC_ELD  38
+#define FF_PROFILE_AAC_XHE  41
 #define FF_PROFILE_MPEG2_AAC_LOW 128
 #define FF_PROFILE_MPEG2_AAC_HE  131
 
@@ -2044,6 +2045,19 @@ typedef struct AVCodecContext {
      * - decoding: unused
      */
     int (*get_encode_buffer)(struct AVCodecContext *s, AVPacket *pkt, int flags);
+
+    /**
+     * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE only.
+     */
+    int roll_distance;
+    /**
+     * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE and mhm1Enc/MPEG_3D_AUDIO only.
+     */
+    int64_t rap_interval;
+    /**
+     * Audio only. mhm1Enc/MPEG_3D_AUDIO only.
+     */
+    Mhm1Parameters mhm1_params;
 
     /**
      * Audio channel layout.

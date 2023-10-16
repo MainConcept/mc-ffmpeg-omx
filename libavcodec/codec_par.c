@@ -161,6 +161,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
         par->initial_padding  = codec->initial_padding;
         par->trailing_padding = codec->trailing_padding;
         par->seek_preroll     = codec->seek_preroll;
+        par->roll_distance    = codec->roll_distance;
+        par->rap_interval     = codec->rap_interval;
+        par->mhm1_params      = codec->mhm1_params;
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         par->width  = codec->width;
@@ -243,6 +246,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
         codec->initial_padding  = par->initial_padding;
         codec->trailing_padding = par->trailing_padding;
         codec->seek_preroll     = par->seek_preroll;
+        codec->roll_distance    = par->roll_distance;
+        codec->rap_interval     = par->rap_interval;
+        codec->mhm1_params      = par->mhm1_params;
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         codec->width  = par->width;

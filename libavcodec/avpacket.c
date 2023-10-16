@@ -43,6 +43,7 @@ void av_init_packet(AVPacket *pkt)
     pkt->buf                  = NULL;
     pkt->side_data            = NULL;
     pkt->side_data_elems      = 0;
+    pkt->audioframe_flags     = 0;
     pkt->opaque               = NULL;
     pkt->opaque_ref           = NULL;
     pkt->time_base            = av_make_q(0, 1);
@@ -391,6 +392,7 @@ int av_packet_copy_props(AVPacket *dst, const AVPacket *src)
     dst->pos                  = src->pos;
     dst->duration             = src->duration;
     dst->flags                = src->flags;
+    dst->audioframe_flags     = src->audioframe_flags;
     dst->stream_index         = src->stream_index;
     dst->opaque               = src->opaque;
     dst->time_base            = src->time_base;

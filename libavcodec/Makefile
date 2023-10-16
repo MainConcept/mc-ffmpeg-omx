@@ -1133,6 +1133,15 @@ OBJS-$(CONFIG_LIBXAVS2_ENCODER)           += libxavs2.o
 OBJS-$(CONFIG_LIBXVID_ENCODER)            += libxvid.o
 OBJS-$(CONFIG_LIBZVBI_TELETEXT_DECODER)   += libzvbi-teletextdec.o ass.o
 
+OBJS-$(CONFIG_AVC_OMX_ENCODER)            += omx_video_enc_avc.o omx_common.o omx_video_enc_common.o
+OBJS-$(CONFIG_AVC_OMX_DECODER)            += omx_video_dec_avc.o omx_common.o omx_video_enc_common.o
+OBJS-$(CONFIG_HEVC_OMX_ENCODER)           += omx_video_enc_hevc.o omx_common.o omx_video_enc_common.o
+OBJS-$(CONFIG_HEVC_OMX_DECODER)           += omx_video_dec_hevc.o omx_common.o omx_video_enc_common.o
+OBJS-$(CONFIG_XHEAAC_OMX_ENCODER)         += omx_audio_enc_heaac.o omx_common.o omx_audio_enc_common.o
+OBJS-$(CONFIG_VVC_OMX_ENCODER)            += omx_video_enc_vvc.o omx_common.o omx_video_enc_common.o
+OBJS-$(CONFIG_MPEGH_OMX_ENCODER)          += omx_audio_enc_mpegh.o omx_common.o omx_audio_enc_common.o
+OBJS-$(CONFIG_MP2V_OMX_ENCODER)           += omx_video_enc_mp2v.o omx_common.o omx_video_enc_common.o
+
 # parsers
 OBJS-$(CONFIG_AAC_LATM_PARSER)         += latm_parser.o
 OBJS-$(CONFIG_AAC_PARSER)              += aac_parser.o aac_ac3_parser.o

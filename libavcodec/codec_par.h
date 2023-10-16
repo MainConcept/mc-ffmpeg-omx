@@ -44,6 +44,28 @@ enum AVFieldOrder {
     AV_FIELD_BT,          ///< Bottom coded first, top displayed first
 };
 
+
+typedef struct Mhm1Parameters {
+    uint8_t valid;
+    /**
+     * CICP of the reference speaker layout, as signalled by the input.
+     */
+    uint8_t ref_layout;
+    /**
+     * MPEG-H profile used by the encoder, e.g. main, baseline, low complexity in various levels.
+     */
+    uint8_t profile;
+    /**
+     * Number of compatible profiles, currently either 0 or 1.
+     */
+    uint8_t num_compat;
+    /**
+     * Compatible profiles for the given profile.
+     */
+    uint8_t compat_profiles[1];
+} Mhm1Parameters;
+
+
 /**
  * This struct describes the properties of an encoded stream.
  *
@@ -206,6 +228,18 @@ typedef struct AVCodecParameters {
      * Audio only. Number of samples to skip after a discontinuity.
      */
     int seek_preroll;
+    /**
+     * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE only.
+     */
+    int roll_distance;
+    /**
+     * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE and mhm1Enc/MPEG_3D_AUDIO only.
+     */
+    int64_t rap_interval;
+    /**
+     * Audio only. mhm1Enc/MPEG_3D_AUDIO only.
+     */
+    Mhm1Parameters mhm1_params;
 
     /**
      * Audio only. The channel layout and number of channels.

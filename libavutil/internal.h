@@ -103,6 +103,8 @@
  */
 #define FF_FIELD_AT(type, off, obj) (*(type *)((char *)&(obj) + (off)))
 
+#define FF_PTR_ADD(ptr, off) ((off) ? (ptr) + (off) : (ptr))
+
 #include "libm.h"
 
 /**

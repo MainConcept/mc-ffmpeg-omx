@@ -254,6 +254,18 @@ int ff_encode_encode_cb(AVCodecContext *avctx, AVPacket *avpkt,
                 goto unref;
         }
 
+        if (avctx->codec->type == AVMEDIA_TYPE_AUDIO) {
+            /* NOTE: if we add any audio encoders which output non-keyframe packets,
+             *       this needs to be moved to the encoders, but for now we can do it
+             *       here to simplify things */
+            if (!(avctx->codec->id == AV_CODEC_ID_AAC && avctx->profile == FF_PROFILE_AAC_XHE) &&
+                avctx->codec->id != AV_CODEC_ID_MPEGH_3D_AUDIO) {
+                avpkt->flags |= AV_PKT_FLAG_KEY;
+            }
+
+            avpkt->dts = avpkt->pts;
+        }
+
         // dts equals pts unless there is reordering
         // there can be no reordering if there is no encoder delay
         if (!(avctx->codec_descriptor->props & AV_CODEC_PROP_REORDER) ||

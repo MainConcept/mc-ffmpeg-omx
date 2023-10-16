@@ -212,6 +212,19 @@ typedef struct AVCodecParameters {
      * Audio only. Number of samples to skip after a discontinuity.
      */
     int seek_preroll;
+    /**
+     * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE only.
+     */
+    int roll_distance;
+    /**
+     * Audio only. xHEAACEnc/FF_PROFILE_AAC_XHE and mhm1Enc/MPEG_3D_AUDIO only.
+     */
+    int64_t rap_interval;
+    /**
+     * Audio only. mhm1Enc/MPEG_3D_AUDIO only.
+     */
+    Mhm1Parameters mhm1_params;
+
 } AVCodecParameters;
 
 /**

@@ -261,6 +261,38 @@ int enc_open(void *opaque, const AVFrame *frame)
             }
         }
 
+        // copy HDR-10 related side data
+        for (int i=0; i<frame->nb_side_data; i++) {
+            AVFrameSideData* fsd = frame->side_data[i];
+            if (fsd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA ||
+                fsd->type == AV_FRAME_DATA_CONTENT_LIGHT_LEVEL) {
+
+                AVPacketSideData* tmp = av_realloc_array(enc_ctx->coded_side_data, enc_ctx->nb_coded_side_data+1, sizeof(*tmp));
+
+                if (!tmp)
+                    return AVERROR(ENOMEM);
+
+                enc_ctx->coded_side_data = tmp;
+
+                AVPacketSideData* sd = &enc_ctx->coded_side_data[enc_ctx->nb_coded_side_data];
+
+                switch (fsd->type) {
+                    case AV_FRAME_DATA_MASTERING_DISPLAY_METADATA:
+                        sd->type = AV_PKT_DATA_MASTERING_DISPLAY_METADATA;
+                        break;
+                    case AV_FRAME_DATA_CONTENT_LIGHT_LEVEL:
+                        sd->type = AV_PKT_DATA_CONTENT_LIGHT_LEVEL;
+                        break;
+                }
+
+                sd->data = av_mallocz(fsd->size);
+                memcpy(sd->data, fsd->data, fsd->size);
+                sd->size = fsd->size;
+
+                enc_ctx->nb_coded_side_data++;
+            }
+        }
+
         if (enc_ctx->flags & (AV_CODEC_FLAG_INTERLACED_DCT | AV_CODEC_FLAG_INTERLACED_ME) ||
             (frame->flags & AV_FRAME_FLAG_INTERLACED)
 #if FFMPEG_OPT_TOP

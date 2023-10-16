@@ -995,5 +995,5 @@ finish:
 
     sch_free(&sch);
 
-    return ret;
+    return ret >= 0 ? ret : 1;
 }

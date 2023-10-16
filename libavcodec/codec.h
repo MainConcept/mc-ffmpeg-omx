@@ -173,6 +173,8 @@
  */
 #define AV_CODEC_CAP_ENCODER_RECON_FRAME (1 << 22)
 
+#define AV_CODEC_CAP_NON_INTRA           (1 << 23)
+
 /**
  * AVProfile.
  */

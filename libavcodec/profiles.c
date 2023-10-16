@@ -27,6 +27,7 @@ const AVProfile ff_aac_profiles[] = {
     { AV_PROFILE_AAC_LOW,   "LC"       },
     { AV_PROFILE_AAC_HE,    "HE-AAC"   },
     { AV_PROFILE_AAC_HE_V2, "HE-AACv2" },
+    { FF_PROFILE_AAC_XHE,   "xHE-AAC"  },
     { AV_PROFILE_AAC_LD,    "LD"       },
     { AV_PROFILE_AAC_ELD,   "ELD"      },
     { AV_PROFILE_AAC_MAIN,  "Main" },

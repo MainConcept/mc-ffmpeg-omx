@@ -272,6 +272,18 @@ const FFOutputFormat ff_eac3_muxer = {
     .write_packet      = ff_raw_write_packet,
     .p.flags           = AVFMT_NOTIMESTAMPS,
 };
+
+FFOutputFormat ff_ec3_muxer = {
+        .p.name            = "ec3",
+        .p.long_name       = NULL_IF_CONFIG_SMALL("raw E-AC-3"),
+        .p.mime_type       = "audio/x-eac3",
+        .p.extensions      = "ec3",
+        .p.audio_codec     = AV_CODEC_ID_EAC3,
+        .p.video_codec     = AV_CODEC_ID_NONE,
+        .write_header      = force_one_stream,
+        .write_packet      = ff_raw_write_packet,
+        .p.flags           = AVFMT_NOTIMESTAMPS,
+};
 #endif
 
 #if CONFIG_G722_MUXER
@@ -454,6 +466,26 @@ const FFOutputFormat ff_hevc_muxer = {
     .write_packet      = ff_raw_write_packet,
     .check_bitstream   = hevc_check_bitstream,
     .p.flags           = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
+#if CONFIG_MPEGH_MUXER
+static int mpegh_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt)
+{
+    // TODO: Should we add some headers?
+    return 1;
+}
+
+FFOutputFormat ff_mpegh_muxer = {
+        .p.name            = "mpegh",
+        .p.long_name       = NULL_IF_CONFIG_SMALL("raw MPEG-H audio"),
+        .p.extensions      = "mpegh",
+        .p.audio_codec     = AV_CODEC_ID_MPEGH_3D_AUDIO,
+        .p.video_codec     = AV_CODEC_ID_NONE,
+        .init              = force_one_stream,
+        .write_packet      = ff_raw_write_packet,
+        .check_bitstream   = mpegh_check_bitstream,
+        .p.flags           = AVFMT_NOTIMESTAMPS,
 };
 #endif
 

@@ -802,6 +802,16 @@ static void format_date(char *buf, int size, int64_t time_us)
     }
 }
 
+static void update_mhm1_codec_str(AVFormatContext *s, AVStream* st, OutputStream* os) {
+    if (st == NULL || os == NULL || st->codecpar == NULL || st->codecpar->mhm1_params.valid == 0)
+    {
+        av_log(s, AV_LOG_ERROR, "Failed to update mhm1 codec string. The resulting manifest may be incorrect.\n");
+        return;
+    }
+
+    snprintf(os->codec_str, sizeof(os->codec_str), "mhm1.0x%02X", st->codecpar->mhm1_params.profile);
+}
+
 static int write_adaptation_set(AVFormatContext *s, AVIOContext *out, int as_index,
                                 int final)
 {
@@ -869,10 +879,17 @@ static int write_adaptation_set(AVFormatContext *s, AVIOContext *out, int as_ind
                 avio_printf(out, " codingDependency=\"false\"");
             avio_printf(out, ">\n");
         } else {
-            avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"audio/%s\" codecs=\"%s\"%s audioSamplingRate=\"%d\">\n",
-                i, os->format_name, os->codec_str, bandwidth_str, s->streams[i]->codecpar->sample_rate);
-            avio_printf(out, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"urn:mpeg:mpegB:cicp:ChannelConfiguration\" value=\"%d\" />\n",
-                s->streams[i]->codecpar->channels);
+            if (st->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+                avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"audio/%s\" codecs=\"%s\"%s audioSamplingRate=\"%d\">\n",
+                            i, os->format_name, os->codec_str, bandwidth_str, st->codecpar->sample_rate);
+                avio_printf(out, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"urn:mpeg:mpegB:cicp:ChannelConfiguration\" value=\"%d\" />\n",
+                            st->codecpar->mhm1_params.ref_layout);
+            } else {
+                avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"audio/%s\" codecs=\"%s\"%s audioSamplingRate=\"%d\">\n",
+                            i, os->format_name, os->codec_str, bandwidth_str, st->codecpar->sample_rate);
+                avio_printf(out, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"urn:mpeg:mpegB:cicp:ChannelConfiguration\" value=\"%d\" />\n",
+                            st->codecpar->channels);
+            }
         }
         if (!final && c->write_prft && os->producer_reference_time_str[0]) {
             avio_printf(out, "\t\t\t\t<ProducerReferenceTime id=\"%d\" inband=\"true\" type=\"%s\" wallClockTime=\"%s\" presentationTime=\"%"PRId64"\">\n",
@@ -1485,8 +1502,13 @@ static int dash_init(AVFormatContext *s)
         AVDictionary *opts = NULL;
         char filename[1024];
 
-        if (s->streams[i]->codecpar->rap_interval > 0 && s->streams[i]->codecpar->codec_id == AV_CODEC_ID_AAC) {
+        if (s->streams[i]->codecpar->rap_interval > 0 &&
+            (s->streams[i]->codecpar->codec_id == AV_CODEC_ID_AAC || s->streams[i]->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO)) {
             as->seg_duration = s->streams[i]->codecpar->rap_interval;
+
+            if (c->seg_duration != 5000000) {
+                av_log(s, AV_LOG_WARNING, "The seg_duration parameter will be ignored for the audio segments. Instead, the RAP interval returned by the encoder (%ld us) will be used as segment duration for the audio segments.\n", as->seg_duration);
+            }
         }
 
         os->bit_rate = s->streams[i]->codecpar->bit_rate;
@@ -1933,6 +1955,12 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         int range_length, index_length = 0;
         int64_t duration;
 
+        if (st->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+            // For mhm1 the final codec string can only be determined once the first sample has been encoded.
+            // Therefore we need to update it after initializing the DASH muxer.
+            update_mhm1_codec_str(s, st, os);
+        }
+
         if (!os->packets_written)
             continue;
 
@@ -2072,6 +2100,15 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
     ret = update_stream_extradata(s, os, pkt, &st->avg_frame_rate);
     if (ret < 0)
         return ret;
+
+    // I consider the following code as workaround.
+    if (st->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+        size_t side_size = 0;
+        uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
+        if (side && side_size == sizeof(st->codecpar->mhm1_params)) {
+            memcpy(&st->codecpar->mhm1_params, side, side_size);
+        }
+    }
 
     // Fill in a heuristic guess of the packet duration, if none is available.
     // The mp4 muxer will do something similar (for the last packet in a fragment)
@@ -2386,6 +2423,7 @@ static const AVOption options[] = {
     { "write_prft", "Write producer reference time element", OFFSET(write_prft), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, E},
     { "mpd_profile", "Set profiles. Elements and values used in the manifest may be constrained by them", OFFSET(profile), AV_OPT_TYPE_FLAGS, {.i64 = MPD_PROFILE_DASH }, 0, UINT_MAX, E, "mpd_profile"},
     { "dash", "MPEG-DASH ISO Base media file format live profile", 0, AV_OPT_TYPE_CONST, {.i64 = MPD_PROFILE_DASH }, 0, UINT_MAX, E, "mpd_profile"},
+    { "dash_on_demand", "MPEG-DASH ISO Base media file format on-demand profile", 0, AV_OPT_TYPE_CONST, {.i64 = MPD_PROFILE_DASH_ON_DEMAND }, 0, UINT_MAX, E, "mpd_profile"},
     { "dvb_dash", "DVB-DASH profile", 0, AV_OPT_TYPE_CONST, {.i64 = MPD_PROFILE_DVB }, 0, UINT_MAX, E, "mpd_profile"},
     { "http_opts", "HTTP protocol options", OFFSET(http_opts), AV_OPT_TYPE_DICT, { .str = NULL }, 0, 0, E },
     { "target_latency", "Set desired target latency for Low-latency dash", OFFSET(target_latency), AV_OPT_TYPE_DURATION, { .i64 = 0 }, 0, INT_MAX, E },

@@ -822,8 +822,10 @@ static int prepare_input_packet(AVFormatContext *s, AVStream *st, AVPacket *pkt)
     }
 #endif
     /* update flags */
-    if (st->internal->is_intra_only && st->codecpar->profile != FF_PROFILE_AAC_XHE)
-        pkt->flags |= AV_PKT_FLAG_KEY;
+    if (st->internal->is_intra_only &&
+        st->codecpar->profile != FF_PROFILE_AAC_XHE &&
+        st->codecpar->codec_id != AV_CODEC_ID_MPEGH_3D_AUDIO)
+            pkt->flags |= AV_PKT_FLAG_KEY;
 
     return 0;
 }

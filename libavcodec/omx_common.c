@@ -55,7 +55,7 @@
 
 #include <float.h>
 
-static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t* duration_omx, uint32_t* compat_profile)
+static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t* duration_omx, OMX_MHM1_PARAMS* mhm1_params, int* mhm1_params_valid)
 {
     uint64_t offset = (buf->nOffset + buf->nFilledLen + 0x03L) & ~0x03L;
 
@@ -67,8 +67,11 @@ static int parse_extradata(OMX_BUFFERHEADERTYPE* buf, int64_t *dts_omx, int64_t*
                 case OMX_ExtraDataDTS:
                     *dts_omx = from_omx_ticks(((TIMESTAMP_PARAM*)pExtra->data)->DTS);
                     *duration_omx = from_omx_ticks(((TIMESTAMP_PARAM*)pExtra->data)->duration);
-                case OMX_ExtraDataCompatProfile:
-                    *compat_profile = ((OMX_COMPAT_PROFILE*)pExtra->data)->compat_profile;
+                    break;
+                case OMX_ExtraDataMHM1Params:
+                    *mhm1_params = *((OMX_MHM1_PARAMS*)pExtra->data);
+                    *mhm1_params_valid = 1;
+                    break;
                 default:
                     break;
             }
@@ -120,19 +123,32 @@ static int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHE
 
         int64_t dts_omx = AV_NOPTS_VALUE;
         int64_t duration_omx = AV_NOPTS_VALUE;
-        uint32_t compat_profile = 0;
-        parse_extradata(buf, &dts_omx, &duration_omx, &compat_profile);
+        OMX_MHM1_PARAMS mhm1_params = {0};
+        int mhm1_params_valid = 0;
+        parse_extradata(buf, &dts_omx, &duration_omx, &mhm1_params, &mhm1_params_valid);
 
-        if (compat_profile > 0 && (!avctx->compat_profiles || avctx->compat_profiles && avctx->compat_profiles[0] == 1 && avctx->compat_profiles[1] != compat_profile)) {
-            avctx->compat_profiles = av_realloc_array(avctx->compat_profiles, 2, sizeof(avctx->compat_profiles[0]));
-            avctx->compat_profiles[0] = 1;
-            avctx->compat_profiles[1] = compat_profile;
+        if (mhm1_params_valid > 0 && avctx->mhm1_params.num_compat != 1 ||
+            avctx->mhm1_params.num_compat == 1 && avctx->mhm1_params.compat_profiles[0] != mhm1_params.compat_profile) {
 
-            // I consider following code as workaround.
-            uint32_t extradata_size = sizeof(avctx->compat_profiles[0]) * (avctx->compat_profiles[0]+1);
-            uint8_t* p = av_packet_new_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, extradata_size);
+            // If the compat profile value is invalid, num_compat should be set to 0.
+            if (mhm1_params.compat_profile != -1) {
+                avctx->mhm1_params.num_compat = 1;
+                avctx->mhm1_params.compat_profiles[0] = mhm1_params.compat_profile;
+            } else {
+                avctx->mhm1_params.num_compat = 0;
+                avctx->mhm1_params.compat_profiles[0] = -1;
+            }
+
+            avctx->mhm1_params.ref_layout = mhm1_params.ref_layout;
+            avctx->mhm1_params.profile = mhm1_params.profile;
+
+            avctx->mhm1_params.valid = 1;
+
+            // Currently only single compat_profile is supported.
+            uint32_t extradata_size = sizeof(avctx->mhm1_params);
+            uint8_t *p = av_packet_new_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, extradata_size);
             avpkt->flags |= AV_PKT_DATA_NEW_EXTRADATA;
-            memcpy(p, avctx->compat_profiles, extradata_size);
+            memcpy(p, &avctx->mhm1_params, extradata_size);
         }
 
         if (dts_omx != AV_NOPTS_VALUE) {
@@ -207,7 +223,7 @@ static int fill_extradata_sei_buf(OMX_BUFFERHEADERTYPE* buf, uint8_t* sei_data, 
     return 0;
 }
 
-static int fill_extradata_buf(OMX_BUFFERHEADERTYPE* buf, const uint8_t* sei_data, uint64_t sei_size, const OMX_COLOR_ASPECT* color_aspect)
+static int fill_extradata_buf(OMX_BUFFERHEADERTYPE* buf, const uint8_t* sei_data, uint64_t sei_size, const OMX_COLOR_ASPECT* color_aspect, const OMX_INTERLACEFORMATTYPE* interlace_mode)
 {
     uint64_t offset = av_omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
 
@@ -235,6 +251,19 @@ static int fill_extradata_buf(OMX_BUFFERHEADERTYPE* buf, const uint8_t* sei_data
         memcpy(color_ext->data, color_aspect, sizeof(*color_aspect));
 
         offset += av_omx_get_ext_pos(buf->pBuffer + offset, color_ext->nSize);
+    }
+
+    if (interlace_mode) {
+        OMX_OTHER_EXTRADATATYPE *interlace_mode_ext = buf->pBuffer + offset;
+        INIT_STRUCT(*interlace_mode_ext);
+
+        interlace_mode_ext->nSize += sizeof(OMX_INTERLACEFORMATTYPE);
+        interlace_mode_ext->nDataSize += sizeof(OMX_INTERLACEFORMATTYPE);
+        interlace_mode_ext->eType = OMX_ExtraDataInterlaceFormat;
+
+        memcpy(interlace_mode_ext->data, interlace_mode, sizeof(*interlace_mode));
+
+        offset += av_omx_get_ext_pos(buf->pBuffer + offset, interlace_mode_ext->nSize);
     }
 
     OMX_OTHER_EXTRADATATYPE last_empty_extra;
@@ -381,7 +410,15 @@ static int frame_to_buffer_video(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* bu
 
     OMX_COLOR_ASPECT color_aspect;
     fill_coloraspect(fr, &color_aspect);
-    fill_extradata_buf(buf, (uint8_t*)sei_data, sei_size, &color_aspect);
+
+    OMX_INTERLACEFORMATTYPE interlace_mode;
+    INIT_STRUCT(interlace_mode);
+
+    interlace_mode.nFormat = OMX_InterlaceFrameProgressive;
+    if (fr->interlaced_frame)
+        interlace_mode.nFormat = fr->top_field_first ? OMX_InterlaceFrameTopFieldFirst : OMX_InterlaceFrameBottomFieldFirst;
+
+    fill_extradata_buf(buf, (uint8_t*)sei_data, sei_size, &color_aspect, &interlace_mode);
 
     return 0;
 }

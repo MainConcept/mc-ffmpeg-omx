@@ -305,14 +305,15 @@ static int mov_write_sdtp_tag(AVIOContext *pb, MOVTrack *track)
 
 static int mov_write_mhaP_tag(AVIOContext *pb, MOVTrack *track)
 {
-    if (!track->par->compat_profiles) return 0;
-    int num = track->par->compat_profiles[0];
+    Mhm1Parameters* params = &track->par->mhm1_params;
+    int num = params->valid ? params->num_compat : 0;
+    if (!num) return 0;
 
     avio_wb32(pb, 9 + num); /* size */
     ffio_wfourcc(pb, "mhaP");
-    avio_w8(pb, num);
-    for (int i = 1; i <= num; i++) {
-        avio_w8(pb, track->par->compat_profiles[i]);
+    avio_w8(pb, num); /* count */
+    for (int i = 0; i < num; i++) {
+        avio_w8(pb, params->compat_profiles[i]); /* compatible profile */
     }
     return 9 + num;
 }
@@ -2569,7 +2570,7 @@ static int mov_preroll_write_atoms_aacxhe(AVIOContext *pb, MOVMuxContext *mov, M
         if (track->cluster[i].audioframe_flags & MOV_AUDIOFRAME_IF) {
             current_group_index = 1;
         } else {
-          current_group_index = 0;
+            current_group_index = 0;
         }
         if (current_group_index != last_group_index) {
             sbpg_entry_count++;
@@ -5513,8 +5514,8 @@ static int mov_flush_fragment(AVFormatContext *s, int force)
             mov->tracks[i].data_offset = pos + moov_size + 8;
 
         avio_write_marker(s->pb, AV_NOPTS_VALUE, AVIO_DATA_MARKER_HEADER);
-        if (mov->flags & FF_MOV_FLAG_DELAY_MOOV)
-            mov_write_identification(s->pb, s);
+
+        // mov_write_identification was already called during the initialization, so there is no need to call it here again.
         if ((ret = mov_write_moov_tag(s->pb, mov, s)) < 0)
             return ret;
 
@@ -6081,10 +6082,8 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
     if (trk->par->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
         buffer_size_t side_size;
         uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
-        if (side && side_size == sizeof(par->compat_profiles[0]) * 2) {
-            if (!par->compat_profiles)
-                par->compat_profiles = av_realloc_array(par->compat_profiles, 2, sizeof(par->compat_profiles[0]));
-            memcpy(par->compat_profiles, side, side_size);
+        if (side && side_size == sizeof(par->mhm1_params)) {
+            memcpy(&par->mhm1_params, side, side_size);
         }
     }
 
@@ -6977,10 +6976,8 @@ static int mov_write_header(AVFormatContext *s)
         }
     }
 
-    if (!(mov->flags & FF_MOV_FLAG_DELAY_MOOV)) {
-        if ((ret = mov_write_identification(pb, s)) < 0)
-            return ret;
-    }
+    if ((ret = mov_write_identification(pb, s)) < 0)
+        return ret;
 
     if (mov->reserved_moov_size){
         mov->reserved_header_pos = avio_tell(pb);

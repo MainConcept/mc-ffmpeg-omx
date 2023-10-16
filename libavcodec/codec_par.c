@@ -128,7 +128,7 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
         par->seek_preroll     = codec->seek_preroll;
         par->roll_distance    = codec->roll_distance;
         par->rap_interval     = codec->rap_interval;
-        par->compat_profiles  = codec->compat_profiles;
+        par->mhm1_params      = codec->mhm1_params;
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         par->width  = codec->width;
@@ -187,7 +187,7 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
         codec->seek_preroll     = par->seek_preroll;
         codec->roll_distance    = par->roll_distance;
         codec->rap_interval     = par->rap_interval;
-        codec->compat_profiles  = par->compat_profiles;
+        codec->mhm1_params      = par->mhm1_params;
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         codec->width  = par->width;

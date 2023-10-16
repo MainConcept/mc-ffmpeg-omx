@@ -591,6 +591,22 @@ av_cold int omx_set_pic_param(AVCodecContext *avctx)
         OMX_ERROR_CHECK(ret, avctx)
     }
 
+    OMX_VIDEO_PARAM_INTERLACEMODETYPE interlace_mode;
+    INIT_STRUCT(interlace_mode);
+
+    interlace_mode.nFormat = OMX_InterlaceFrameProgressive;
+
+    switch (avctx->field_order) {
+        case AV_FIELD_PROGRESSIVE:   interlace_mode.nFormat = OMX_InterlaceFrameProgressive; break;
+        case AV_FIELD_TT:            interlace_mode.nFormat = OMX_InterlaceFrameTopFieldFirst; break;
+        case AV_FIELD_BB:            interlace_mode.nFormat = OMX_InterlaceFrameBottomFieldFirst; break;
+        case AV_FIELD_TB:            interlace_mode.nFormat = OMX_InterlaceFrameTopFieldFirst; break;
+        case AV_FIELD_BT:            interlace_mode.nFormat = OMX_InterlaceFrameBottomFieldFirst; break;
+    }
+
+    ret = OMX_SetParameter(s->component, OMX_IndexParamVideoInterlaceMode, &interlace_mode);
+    OMX_ERROR_CHECK(ret, avctx)
+
     return 0;
 }
 

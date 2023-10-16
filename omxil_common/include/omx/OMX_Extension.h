@@ -296,11 +296,20 @@ typedef struct OMX_VIDEO_PARAM_COLORIMETRYTYPE {
     OMX_COLOR_CONTENT_LIGHT_LEVEL sContentLightLevel;
 } OMX_VIDEO_PARAM_COLORIMETRYTYPE;
 
+/** Video interlace mode information */
+typedef struct OMX_VIDEO_PARAM_INTERLACEMODETYPE {
+    OMX_U32 nSize;                 /**< size of the structure in bytes */
+    OMX_VERSIONTYPE nVersion;      /**< OMX specification version information */
+    OMX_U32 nPortIndex;            /**< port that this structure applies to */
+    OMX_U32 nFormat;               /**< OMX_INTERLACETYPE */
+} OMX_VIDEO_PARAM_INTERLACEMODETYPE;
+
 typedef enum OMX_INDEXTYPE_EXT {
     OMX_IndexParamAudioDdp = 0x7f00007B,           /**< reference: OMX_AUDIO_PARAM_DDPTYPE */
     OMX_IndexParamAudioXheaac = 0x7f00007C,        /**< reference: OMX_AUDIO_PARAM_XHEAACTYPE */
     OMX_IndexParamVideoCodecConfig = 0x7f00007D,   /**< reference: OMX_VIDEO_PARAM_CODECCONFIGTYPE */
     OMX_IndexParamVideoColorimetry = 0x7f00007E,   /**< reference: OMX_VIDEO_PARAM_COLORIMETRYTYPE */
+    OMX_IndexParamVideoInterlaceMode = 0x7f00007F,   /**< reference: OMX_VIDEO_PARAM_INTERLACEMODETYPE */
 } OMX_INDEXTYPE_EXT;
 /*
  * End of Dolby structures copied from https://github.com/raspberrypi/firmware/blob/master/opt/vc/include/IL/OMX_Audio.h
@@ -338,9 +347,8 @@ typedef struct OMX_INTERLACEFORMATTYPE {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
     OMX_U32 nPortIndex;
-    OMX_U32 nFormat;//OMX_INTERLACETYPE
+    OMX_U32 nFormat;                //  OMX_INTERLACETYPE
     OMX_TICKS nTimeStamp;
-
 } OMX_INTERLACEFORMATTYPE;
 
 typedef enum OMX_INTERLACETYPE
@@ -360,9 +368,11 @@ typedef struct OMX_ASPECT_RATIO
     OMX_U32 aspectRatioY;
 } OMX_ASPECT_RATIO;
 
-typedef struct OMX_COMPAT_PROFILE {
+typedef struct OMX_MHM1_PARAMS {
+    OMX_U32 ref_layout;
+    OMX_U32 profile;
     OMX_U32 compat_profile;
-} OMX_COMPAT_PROFILE;
+} OMX_MHM1_PARAMS;
 
 /**
  * Custom parameter indices
@@ -383,6 +393,6 @@ typedef struct OMX_COMPAT_PROFILE {
 #define OMX_ExtraDataInterlaceFormat VENDOR_EXTRADATATYPE(4)/**< reference: OMX_OTHER_EXTRADATATYPE */
 #define OMX_ExtraDataVideoPictureType VENDOR_EXTRADATATYPE(5)/**< reference: OMX_OTHER_EXTRADATATYPE */
 #define OMX_ExtraDataColorAspect VENDOR_EXTRADATATYPE(6)/**< reference: OMX_OTHER_EXTRADATATYPE */
-#define OMX_ExtraDataCompatProfile VENDOR_EXTRADATATYPE(7)/**< reference: OMX_COMPAT_PROFILE */
+#define OMX_ExtraDataMHM1Params VENDOR_EXTRADATATYPE(7)/**< reference: OMX_MHM1_PARAMS */
 
 #endif // OMXIL_COMMON_INCLUDE_OMX_OMX_EXTENSION_H

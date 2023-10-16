@@ -423,6 +423,9 @@ static void write_codec_attr(AVStream *st, VariantStream *vs)
         } else {
             snprintf(attr, sizeof(attr), "mp4a.40.2");
         }
+    } else if (st->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+        int profile = st->codecpar->mhm1_params.profile;
+        snprintf(attr, sizeof(attr), "mhm1.0x%02X", profile);
     } else if (st->codecpar->codec_id == AV_CODEC_ID_AC3) {
         snprintf(attr, sizeof(attr), "ac-3");
     } else if (st->codecpar->codec_id == AV_CODEC_ID_EAC3) {
@@ -2331,6 +2334,8 @@ static int hls_write_header(AVFormatContext *s)
         if (ret < 0)
             return ret;
         //av_assert0(s->nb_streams == hls->avf->nb_streams);
+        // Reset codec string to allow for updates by calling hls_write_header multiple times
+        vs->codec_attr[0] = '\0';
         for (j = 0; j < vs->nb_streams; j++) {
             AVStream *inner_st;
             AVStream *outer_st = vs->streams[j];
@@ -2473,6 +2478,15 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
         int64_t after_init_list_dur = (vs->sequence - hls->start_sequence - vs->nb_entries) * hls->time;
         hls->recording_time = hls->time;
         end_pts = init_list_dur + after_init_list_dur ;
+    }
+
+    // I consider the following code as workaround.
+    if (st->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+        size_t side_size;
+        uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
+        if (side && side_size == sizeof(st->codecpar->mhm1_params)) {
+            memcpy(&st->codecpar->mhm1_params, side, side_size);
+        }
     }
 
     if (vs->start_pts == AV_NOPTS_VALUE) {
@@ -2739,11 +2753,29 @@ static int hls_write_trailer(struct AVFormatContext *s)
     char *old_filename = NULL;
     const char *proto = NULL;
     int use_temp_file = 0;
-    int i;
+    int i, j;
     int ret = 0;
     VariantStream *vs = NULL;
     AVDictionary *options = NULL;
     int range_length, byterange_mode;
+
+    int write_header = 0;
+    // For MPEG-H 3D Audio, the actual encoder configuration is determined from the input data.
+    // Therefore, the final profile and level of the encoder is only available after encoding the first sample.
+    // Because this only happens after initializing the HLS header, we update the header when MPEG-H 3D Audio is contained.
+    for (i = 0; !write_header && i < hls->nb_varstreams; i++) {
+        vs = &hls->var_streams[i];
+
+        for (j = 0; !write_header && j < vs->nb_streams; j++) {
+            if (vs->streams[j]->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO) {
+                write_header = 1;
+            }
+        }
+    }
+
+    if (write_header) {
+        hls_write_header(s);
+    }
 
     for (i = 0; i < hls->nb_varstreams; i++) {
         char *filename = NULL;
@@ -2981,9 +3013,12 @@ static int hls_init(AVFormatContext *s)
         vs->initial_prog_date_time = initial_program_date_time;
 
         for (j = 0; j < vs->nb_streams; j++) {
-            if (vs->streams[j]->codecpar->rap_interval > 0 && vs->streams[j]->codecpar->codec_id == AV_CODEC_ID_AAC) {
+            if (vs->streams[j]->codecpar->rap_interval > 0 &&
+                (vs->streams[j]->codecpar->codec_id == AV_CODEC_ID_AAC || vs->streams[j]->codecpar->codec_id == AV_CODEC_ID_MPEGH_3D_AUDIO)) {
                 vs->enc_prod_indep_seg = 1;
                 hls->recording_time = vs->streams[j]->codecpar->rap_interval;
+
+                av_log(s, AV_LOG_WARNING, "Target segment duration for HLS output was automatically set to the audio RAP interval for both audio and video.\n");
             }
 
             vs->has_video += vs->streams[j]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;

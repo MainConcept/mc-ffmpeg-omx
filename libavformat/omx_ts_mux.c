@@ -1,6 +1,6 @@
 /*
  * OMX TS muxer
- * Copyright (c) 2023 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2024 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -180,7 +180,7 @@ static int disable_unused_ports(AVFormatContext *avctx)
     for (int i=0; i<avctx->nb_streams; i++)
         n_streams[avctx->streams[i]->codecpar->codec_type]++;
 
-    static int omx_domain_to_codec_type[] = {AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, AVMEDIA_TYPE_DATA, AVMEDIA_TYPE_DATA};
+    static int omx_domain_to_codec_type[] = {AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, AVMEDIA_TYPE_DATA, AVMEDIA_TYPE_SUBTITLE};
 
     for (int i=0; i<OMX_PortDomainOther+1; i++) {
         const int n_ports = s->nPorts[i];
@@ -265,6 +265,34 @@ static int set_port_parameters(AVFormatContext* avctx)
 
             ret = OMX_SetParameter(s->component, OMX_IndexParamAudioAac, &aac_profile);
             OMX_ERROR_CHECK(ret, avctx);
+        } else if (avctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_DVB_SUBTITLE) {
+            const OMX_U32 port_idx = s_mux->stream_idx_to_port[i];
+
+            OMX_PARAM_PORTDEFINITIONTYPE port_def;
+            INIT_STRUCT(port_def);
+
+            port_def.nPortIndex = port_idx;
+
+            int ret = OMX_GetParameter(s->component, OMX_IndexParamPortDefinition, &port_def);
+            OMX_ERROR_CHECK(ret, avctx);
+
+            port_def.eDomain = OMX_PortDomainOther;
+            port_def.format.other.eFormat = OMX_OTHER_FormatDVBSubs;
+
+            ret = OMX_SetParameter(s->component, OMX_IndexParamPortDefinition, &port_def);
+            OMX_ERROR_CHECK(ret, avctx);
+
+            AVDictionaryEntry *lang = av_dict_get(avctx->streams[i]->metadata, "language", NULL, 0);
+            if (lang && lang->value && lang->value[0]) {
+                OMX_OTHER_PARAM_DVBSUBSTYPE dvb_subs_params;
+                INIT_STRUCT(dvb_subs_params);
+
+                dvb_subs_params.nPortIndex = port_idx;
+                strncpy(dvb_subs_params.nLanguageCode, lang->value, 4);
+
+                ret = OMX_SetParameter(s->component, OMX_IndexParamOtherDvbSubs, &dvb_subs_params);
+                OMX_ERROR_CHECK(ret, avctx);
+            }
         }
     }
 
@@ -403,11 +431,12 @@ static int mpegts_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
 
     AVStream *st = avctx->streams[avpkt->stream_index];
 
-    int video_pkt = st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_HEVC || st->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO;
-    int audio_pkt = (st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 || st->codecpar->codec_id == AV_CODEC_ID_AAC ||
-                     st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM || st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2);
+    const int video_pkt = st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_HEVC || st->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO;
+    const int audio_pkt = st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 || st->codecpar->codec_id == AV_CODEC_ID_AAC ||
+                     st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM || st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2;
+    const int subs_pkt = st->codecpar->codec_id == AV_CODEC_ID_DVB_SUBTITLE;
 
-    if (!(video_pkt || audio_pkt)) {
+    if (!(video_pkt || audio_pkt || subs_pkt)) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported format of input stream: %s\n",
                avcodec_descriptor_get(st->codecpar->codec_id)->name);
         return 0;
@@ -426,15 +455,38 @@ static int mpegts_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
 
     av_assert0(buf->nAllocLen >= avpkt->size);
 
+    buf->nFilledLen = avpkt->size;
+    memcpy(buf->pBuffer + buf->nOffset, avpkt->data, avpkt->size);
+
     if (avpkt->pts == AV_NOPTS_VALUE) {
         buf->nFlags |= OMX_BUFFERFLAG_TIMESTAMPINVALID;
     } else {
         const AVRational omx_time_base = {1, 1000000};
         buf->nTimeStamp = to_omx_ticks(av_rescale_q(avpkt->pts, st->time_base, omx_time_base));
-    }
 
-    buf->nFilledLen = avpkt->size;
-    memcpy(buf->pBuffer + buf->nOffset, avpkt->data, avpkt->size);
+        uint64_t offset = av_omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
+        OMX_OTHER_EXTRADATATYPE *dts_ext = buf->pBuffer + offset;
+        INIT_STRUCT(*dts_ext);
+
+        TIMESTAMP_PARAM ts_param = {0};
+        ts_param.DTS = to_omx_ticks(av_rescale_q(avpkt->dts, st->time_base, omx_time_base));
+        ts_param.duration = to_omx_ticks(av_rescale_q(avpkt->duration, st->time_base, omx_time_base));
+
+        dts_ext->nSize += sizeof(ts_param);
+        dts_ext->nDataSize = sizeof(ts_param);
+        dts_ext->eType = OMX_ExtraDataDTS;
+
+        memcpy(dts_ext->data, &ts_param, sizeof(ts_param));
+
+        offset += av_omx_get_ext_pos(buf->pBuffer + offset, dts_ext->nSize);
+
+        OMX_OTHER_EXTRADATATYPE last_empty_extra;
+        INIT_STRUCT(last_empty_extra);
+        last_empty_extra.eType = OMX_ExtraDataNone;
+
+        memcpy(buf->pBuffer + offset, (uint8_t*)&last_empty_extra, last_empty_extra.nSize);
+        buf->nFlags |= OMX_BUFFERFLAG_EXTRADATA;
+    }
 
     OMX_EmptyThisBuffer(s->component, buf);
 
@@ -497,7 +549,8 @@ static int mpegts_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt
     } else if (st->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
     } else if (st->codecpar->codec_id == AV_CODEC_ID_AAC || st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM ||
                st->codecpar->codec_id == AV_CODEC_ID_AC3 || st->codecpar->codec_id == AV_CODEC_ID_EAC3 ||
-               st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2) {
+               st->codecpar->codec_id == AV_CODEC_ID_MP3 || st->codecpar->codec_id == AV_CODEC_ID_MP2 ||
+               st->codecpar->codec_id == AV_CODEC_ID_DVB_SUBTITLE) {
     } else {
         av_log(s, AV_LOG_ERROR, "Currently supported formats are AVC, HEVC, MPEG-2, AAC, MPEG Layer 1/2 Audio, AC3, EAC3 only.\n But input AV_CODEC_ID = %d\n", st->codecpar->codec_id);
         ret = AVERROR_MUXER_NOT_FOUND;

@@ -1,6 +1,6 @@
 /*
  * OMX Audio xHEAAC encoder
- * Copyright (c) 2023 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2024 MainConcept GmbH or its affiliates.
  *
  * This file is part of FFmpeg.
  *
@@ -76,6 +76,8 @@ static av_cold int omx_cmpnt_encoder_init(AVCodecContext *avctx)
 {
     OMXComponentContext *s = avctx->priv_data;
     int ret = 0;
+
+    avctx->internal->intra_only_flag = 0; // Otherwise it is set to AV_PKT_KEY for AAC and all samples in xheeaac are sync samples.
 
     s->avctx = avctx;
 

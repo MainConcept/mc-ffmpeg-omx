@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2024 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -304,6 +304,16 @@ typedef struct OMX_VIDEO_PARAM_INTERLACEMODETYPE {
     OMX_U32 nFormat;               /**< OMX_INTERLACETYPE */
 } OMX_VIDEO_PARAM_INTERLACEMODETYPE;
 
+/** DVB Subtitle parameters */
+typedef struct OMX_OTHER_PARAM_DVBSUBSTYPE {
+    OMX_U32 nSize;                 /**< size of the structure in bytes */
+    OMX_VERSIONTYPE nVersion;      /**< OMX specification version information */
+    OMX_U32 nPortIndex;            /**< port that this structure applies to */
+    OMX_U8  nLanguageCode[4];
+    OMX_U32 nCustomerPageId;
+} OMX_OTHER_PARAM_DVBSUBSTYPE;
+
+
 typedef enum OMX_INDEXTYPE_EXT {
     OMX_IndexParamAudioDdp = 0x7f00007B,           /**< reference: OMX_AUDIO_PARAM_DDPTYPE */
     OMX_IndexParamAudioXheaac = 0x7f00007C,        /**< reference: OMX_AUDIO_PARAM_XHEAACTYPE */
@@ -335,6 +345,11 @@ typedef enum OMX_AUDIO_CODINGTYPE_EXT
 {
     OMX_AUDIO_CodingMPEGH = OMX_AUDIO_CodingVendorStartUnused + 1
 } OMX_AUDIO_CODINGTYPE_EXT;
+
+/**
+ * Custom Other domain format type.
+ */
+#define OMX_OTHER_FormatDVBSubs VENDOR_OTHER_FORMAT(1)
 
 /*
  * it was taken here: https://review.carbonrom.org/plugins/gitiles/CarbonROM/android_hardware_qcom_media/+/fa202b9b18f17f7835fd602db5fff530e61112b4/msmcobalt/mm-core/inc/OMX_QCOMExtns.h
@@ -382,6 +397,8 @@ typedef struct OMX_MHM1_PARAMS {
 #ifndef OMX_IndexParamInterlaceFormat
 #define OMX_IndexParamInterlaceFormat VENDOR_PARAM_INDEX(1)
 #endif
+
+#define OMX_IndexParamOtherDvbSubs VENDOR_PARAM_INDEX(2)
 
  /**
   * Custom ExtraData id

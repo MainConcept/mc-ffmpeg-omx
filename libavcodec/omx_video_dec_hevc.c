@@ -1,6 +1,6 @@
 /*
  * OMX Video HEVC decoder
- * Copyright (c) 2023 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2024 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -84,7 +84,7 @@ FFCodec ff_hevc_omx_decoder = {
         .close             = omx_cmpnt_codec_end,
         .cb_type           = FF_CODEC_CB_TYPE_RECEIVE_FRAME,
         .cb.receive_frame  = omx_receive_frame,
-        .p.capabilities    = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
+        .p.capabilities    = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1 | AV_CODEC_CAP_AVOID_PROBING,
         .bsfs              = "hevc_mp4toannexb",
         .p.priv_class      = &omx_hevc_decoder_class,
         .p.pix_fmts        = (const enum AVPixelFormat[]){AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_NONE}

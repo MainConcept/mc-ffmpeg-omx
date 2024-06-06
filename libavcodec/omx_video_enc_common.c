@@ -1,6 +1,6 @@
 /*
  * OMX Video encoder
- * Copyright (c) 2023 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2024 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -365,6 +365,11 @@ int dec_fill_next_input_buffer(AVCodecContext* avctx, OMX_BUFFERHEADERTYPE* buf)
     }
 
     av_log(avctx, AV_LOG_TRACE,"fill_next_input_buffer: %d size %d pts: %lld dts: %lld duration: %d %s\n", pkt.pos, pkt.size, pkt.pts, pkt.dts, pkt.duration, av_err2str(ret));
+
+    if (pkt.size > buf->nAllocLen) {
+        av_log(avctx, AV_LOG_FATAL, "Max allowed size of a frame is %d, but there is frame of size %d\n", buf->nAllocLen, pkt.size);
+        return AVERROR_INVALIDDATA;
+    }
 
     memcpy(buf->pBuffer, pkt.data, pkt.size);
     buf->nFilledLen = (OMX_U32)pkt.size;

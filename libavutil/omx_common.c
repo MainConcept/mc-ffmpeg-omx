@@ -1,6 +1,6 @@
 /*
  * OMX Common
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2024 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -474,7 +474,7 @@ av_cold int av_omx_cmpnt_end(OMXComponentContext *s)
 
 //    s->core.OMX_Deinit();
 
-    av_frame_free(s->frame);
+    av_frame_free(&s->frame);
 
     pthread_mutex_destroy(&s->deiniting_mutex);
     pthread_cond_destroy(&s->buffers_cond);

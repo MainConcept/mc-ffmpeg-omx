@@ -1,6 +1,6 @@
 /*
  * OMX Video AVC decoder
- * Copyright (c) 2023 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2024 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -83,7 +83,7 @@ AVCodec ff_avc_omx_decoder = {
         .init             = omx_cmpnt_decoder_init,
         .close            = omx_cmpnt_codec_end,
         .receive_frame    = omx_receive_frame,
-        .capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
+        .capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1 | AV_CODEC_CAP_AVOID_PROBING,
         .bsfs             = "h264_mp4toannexb",
         .priv_class       = &omx_avc_decoder_class,
 };

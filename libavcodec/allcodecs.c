@@ -836,6 +836,8 @@ extern AVCodec ff_vp9_mediacodec_decoder;
 extern AVCodec ff_vp9_qsv_decoder;
 extern AVCodec ff_vp9_vaapi_encoder;
 extern AVCodec ff_vp9_qsv_encoder;
+extern AVCodec ff_dolby_omx_decoder;
+extern AVCodec ff_dolby_omx_encoder;
 extern AVCodec ff_avc_omx_encoder;
 extern AVCodec ff_hevc_omx_encoder;
 extern AVCodec ff_avc_omx_decoder;

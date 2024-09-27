@@ -85,7 +85,7 @@ typedef struct OMXCoreLibrary {
     OMX_ERRORTYPE (*OMX_FreeHandle)(OMX_HANDLETYPE);
 } OMXCoreLibrary;
 
-#define MAX_PORT_NUMBER 16
+#define MAX_PORT_NUMBER 32
 
 typedef struct AVFrame AVFrame;
 typedef struct AVCodecContext AVCodecContext;

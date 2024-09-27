@@ -893,6 +893,8 @@ extern const FFCodec ff_vp9_mediacodec_encoder;
 extern const FFCodec ff_vp9_qsv_decoder;
 extern const FFCodec ff_vp9_vaapi_encoder;
 extern const FFCodec ff_vp9_qsv_encoder;
+extern const FFCodec ff_dolby_omx_decoder;
+extern const FFCodec ff_dolby_omx_encoder;
 extern const FFCodec ff_avc_omx_encoder;
 extern const FFCodec ff_hevc_omx_encoder;
 extern const FFCodec ff_avc_omx_decoder;

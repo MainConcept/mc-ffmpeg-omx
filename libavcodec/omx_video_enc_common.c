@@ -223,6 +223,8 @@ static enum AVColorSpace OMX_to_AV_colorspace(const OMX_COLOR_MATRIX_COEFFS fmt)
     case MatrixBT601_6:     return AVCOL_SPC_SMPTE170M;
     case MatrixSMPTE240M:   return AVCOL_SPC_SMPTE240M;
     case MatrixYCGCO:       return AVCOL_SPC_YCOCG;
+    case MatrixBT2020:      return AVCOL_SPC_BT2020_NCL;
+    case MatrixBT2020Constant: return AVCOL_SPC_BT2020_CL;
     }
     return AVCOL_SPC_NB;
 }
@@ -271,7 +273,7 @@ static int fill_extradata_dts(OMX_BUFFERHEADERTYPE* buf, int64_t dts, int64_t du
 {
     uint64_t offset = av_omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
 
-    OMX_OTHER_EXTRADATATYPE* dts_ext = buf->pBuffer + offset;
+    OMX_OTHER_EXTRADATATYPE* dts_ext = (OMX_OTHER_EXTRADATATYPE*)(buf->pBuffer + offset);
     INIT_STRUCT(*dts_ext);
 
     TIMESTAMP_PARAM current_time_param;
@@ -422,7 +424,7 @@ int dec_buffer_to_frame(OMXComponentContext *omxctx, AVFrame* fr, OMX_BUFFERHEAD
     int linesize[4];
     //av_log(avctx, AV_LOG_DEBUG, "width: %d height: %d pix_fmt: %s\n", avctx->width,  avctx->height, av_get_pix_fmt_name(avctx->pix_fmt));
     av_image_fill_arrays(data, linesize, buf->pBuffer + buf->nOffset, avctx->pix_fmt, avctx->width, avctx->height, 1);
-    av_image_copy(fr->data, fr->linesize, data, linesize, avctx->pix_fmt, avctx->width, avctx->height);
+    av_image_copy(fr->data, fr->linesize, (const uint8_t* const *)data, linesize, avctx->pix_fmt, avctx->width, avctx->height);
 
     if (omxctx->swap_planes) {
         uint8_t* tmp = fr->data[1];
@@ -564,7 +566,7 @@ av_cold int omx_set_pic_param(AVCodecContext *avctx)
     // Can't find utility function for extracting specific side data from avctx
     for (int i=0; i<avctx->nb_coded_side_data; i++) {
         if (avctx->coded_side_data[i].type == AV_PKT_DATA_CONTENT_LIGHT_LEVEL) {
-            const AVContentLightMetadata *metadata = avctx->coded_side_data[i].data;
+            const AVContentLightMetadata *metadata = (const AVContentLightMetadata *)avctx->coded_side_data[i].data;
 
             colorimetry.sContentLightLevel.nContentLightLevelPresent = 1;
             colorimetry.sContentLightLevel.nMaxFALL = metadata->MaxFALL;
@@ -572,7 +574,7 @@ av_cold int omx_set_pic_param(AVCodecContext *avctx)
         }
 
         if (avctx->coded_side_data[i].type == AV_PKT_DATA_MASTERING_DISPLAY_METADATA) {
-            const AVMasteringDisplayMetadata *metadata = avctx->coded_side_data[i].data;
+            const AVMasteringDisplayMetadata *metadata = (const AVMasteringDisplayMetadata *)avctx->coded_side_data[i].data;
 
             colorimetry.sMasteringDisplayMetadata.nMasteringDisplayMetadataPresent = 1;
             for (int i=0; i<3; i++) {

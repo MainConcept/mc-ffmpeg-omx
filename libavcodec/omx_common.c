@@ -43,6 +43,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
+#include "libavutil/mathematics.h"
 
 
 #include "encode.h"
@@ -115,9 +116,8 @@ static int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHE
         avpkt->pts = AV_NOPTS_VALUE;
         avpkt->dts = AV_NOPTS_VALUE;
     } else {
-        const int64_t getting_pts =
-                (from_omx_ticks(buf->nTimeStamp) * (int64_t)avctx->time_base.den + 1000000LL * (int64_t)avctx->time_base.num / 2) /
-                (1000000LL * avctx->time_base.num);
+        const int64_t getting_pts = av_rescale_q(from_omx_ticks(buf->nTimeStamp), AV_TIME_BASE_Q, avctx->time_base);
+
         int64_t getting_dts = AV_NOPTS_VALUE;
         int64_t getting_duration = 0;
 
@@ -152,14 +152,12 @@ static int buffer_to_packet(AVCodecContext *avctx, AVPacket *avpkt, OMX_BUFFERHE
         }
 
         if (dts_omx != AV_NOPTS_VALUE) {
-            getting_dts = (llabs(dts_omx) * (int64_t) avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
-                          (1000000LL * avctx->time_base.num);
+            getting_dts = av_rescale_q(llabs(dts_omx), AV_TIME_BASE_Q, avctx->time_base);
             getting_dts = dts_omx > 0 ? getting_dts : -getting_dts;
         }
 
         if (duration_omx != AV_NOPTS_VALUE) {
-            getting_duration = (duration_omx * (int64_t)avctx->time_base.den + 1000000LL * avctx->time_base.num / 2) /
-                               (1000000LL * avctx->time_base.num);
+            getting_duration = av_rescale_q(duration_omx, AV_TIME_BASE_Q, avctx->time_base);
         }
 
         avpkt->pts = getting_pts;
@@ -202,7 +200,7 @@ static int fill_extradata_sei_buf(OMX_BUFFERHEADERTYPE* buf, uint8_t* sei_data, 
 {
     uint64_t offset = av_omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
 
-    OMX_OTHER_EXTRADATATYPE* seicc_ext = buf->pBuffer + offset;
+    OMX_OTHER_EXTRADATATYPE* seicc_ext = (OMX_OTHER_EXTRADATATYPE*)(buf->pBuffer + offset);
     INIT_STRUCT(*seicc_ext);
 
     seicc_ext->nSize += sei_size;
@@ -228,7 +226,7 @@ static int fill_extradata_buf(OMX_BUFFERHEADERTYPE* buf, const uint8_t* sei_data
     uint64_t offset = av_omx_get_ext_pos(buf->pBuffer, buf->nOffset + buf->nFilledLen);
 
     if (sei_data) {
-        OMX_OTHER_EXTRADATATYPE *seicc_ext = buf->pBuffer + offset;
+        OMX_OTHER_EXTRADATATYPE *seicc_ext = (OMX_OTHER_EXTRADATATYPE*)(buf->pBuffer + offset);
         INIT_STRUCT(*seicc_ext);
 
         seicc_ext->nSize += sei_size;
@@ -241,7 +239,7 @@ static int fill_extradata_buf(OMX_BUFFERHEADERTYPE* buf, const uint8_t* sei_data
     }
 
     if (color_aspect) {
-        OMX_OTHER_EXTRADATATYPE *color_ext = buf->pBuffer + offset;
+        OMX_OTHER_EXTRADATATYPE *color_ext = (OMX_OTHER_EXTRADATATYPE*)(buf->pBuffer + offset);
         INIT_STRUCT(*color_ext);
 
         color_ext->nSize += sizeof(*color_aspect);
@@ -254,7 +252,7 @@ static int fill_extradata_buf(OMX_BUFFERHEADERTYPE* buf, const uint8_t* sei_data
     }
 
     if (interlace_mode) {
-        OMX_OTHER_EXTRADATATYPE *interlace_mode_ext = buf->pBuffer + offset;
+        OMX_OTHER_EXTRADATATYPE *interlace_mode_ext = (OMX_OTHER_EXTRADATATYPE*)(buf->pBuffer + offset);
         INIT_STRUCT(*interlace_mode_ext);
 
         interlace_mode_ext->nSize += sizeof(OMX_INTERLACEFORMATTYPE);
@@ -394,7 +392,7 @@ static int frame_to_buffer_video(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* bu
     fwrite(buf->pBuffer + buf->nOffset, 1, luma_sz + chroma_sz + chroma_sz, out);
 #endif // #ifdef DUMP_INPUT_DATA
 
-    buf->nTimeStamp = to_omx_ticks(fr->pts * 1000000 * avctx->time_base.num / avctx->time_base.den);
+    buf->nTimeStamp = av_rescale_q(fr->pts, avctx->time_base, AV_TIME_BASE_Q);
     buf->nFilledLen = luma_sz + 2 * chroma_sz;
 
     if (fr->pict_type == AV_PICTURE_TYPE_I) // ffmpeg set this type on input frame when -force-key_frames is used ("-force_key_frames expr:gte\(t,n_forced*2\)")
@@ -437,7 +435,7 @@ static int frame_to_buffer_audio(AVCodecContext *avctx, OMX_BUFFERHEADERTYPE* bu
     fwrite(buf->pBuffer + buf->nOffset, 1, new_data_size, out);
 #endif // #ifdef DUMP_INPUT_DATA
 
-    buf->nTimeStamp = to_omx_ticks(fr->pts * 1000000 * avctx->time_base.num / avctx->time_base.den);
+    buf->nTimeStamp = av_rescale_q(fr->pts, avctx->time_base, AV_TIME_BASE_Q);
     buf->nFilledLen = new_data_size;
     buf->nFlags = 0;
 

@@ -299,7 +299,6 @@ extern const FFOutputFormat ff_mpeg2vob_muxer;
 extern const FFInputFormat  ff_mpegps_demuxer;
 extern const FFInputFormat  ff_mpegts_demuxer;
 extern const FFOutputFormat ff_mpegts_muxer;
-extern const FFOutputFormat ff_mpegts_omx_muxer;
 extern const FFInputFormat  ff_mpegtsraw_demuxer;
 extern const FFInputFormat  ff_mpegvideo_demuxer;
 extern const FFInputFormat  ff_mpjpeg_demuxer;

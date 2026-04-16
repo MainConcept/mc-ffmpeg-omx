@@ -354,16 +354,8 @@ External library support:
   --enable-omx             enable OpenMAX IL code [no]
   --enable-omx-rpi         enable OpenMAX IL code for Raspberry Pi [no]
   --enable-omx_enc_avc     enable OpenMAX AVC encoder [no]
-  --enable-omx_dec_avc     enable OpenMAX AVC decoder [no]
   --enable-omx_enc_hevc    enable OpenMAX HEVC encoder [no]
-  --enable-omx_dec_hevc    enable OpenMAX HEVC decoder [no]
-  --enable-omx_enc_xheaac  enable OpenMAX xHE-AAC encoder [no]
-  --enable-omx_enc_vvc     enable OpenMAX VVC encoder [no]
-  --enable-omx_enc_mpegh   enable OpenMAX MPEG-H encoder [no]
   --enable-omx_enc_mp2v    enable OpenMAX MPEG-2 video encoder [no]
-  --enable-dolby_omx_dec   enable OpenMAX Dolby audio decoder [no]
-  --enable-dolby_omx_enc   enable OpenMAX Dolby audio encoder [no]
-  --enable-omx_ts_mux      enable OpenMAX TS muxer [no]
   --enable-omx_mxf_mux     enable OpenMAX MXF muxer [no]
   --enable-rkmpp           enable Rockchip Media Process Platform code [no]
   --disable-v4l2-m2m       disable V4L2 mem2mem code [autodetect]
@@ -1990,16 +1982,8 @@ EXTERNAL_LIBRARY_LIST="
     pocketsphinx
     vapoursynth
     omx_enc_avc
-    omx_dec_avc
-    omx_enc_xheaac
-    dolby_omx_dec
-    dolby_omx_enc
     omx_enc_hevc
-    omx_dec_hevc
-    omx_enc_vvc
-    omx_enc_mpegh
     omx_enc_mp2v
-    omx_ts_mux
     omx_mxf_mux
 "
 
@@ -3293,24 +3277,16 @@ wmv3_vaapi_hwaccel_select="vc1_vaapi_hwaccel"
 wmv3_vdpau_hwaccel_select="vc1_vdpau_hwaccel"
 
 avc_omx_encoder_select="omx_enc_avc"
-avc_omx_decoder_select="omx_dec_avc"
-dolby_omx_decoder_select="dolby_omx_dec"
 hevc_omx_encoder_select="omx_enc_hevc"
-hevc_omx_decoder_select="omx_dec_hevc"
-dolby_omx_encoder_select="dolby_omx_enc"
-xheaac_omx_encoder_select="omx_enc_xheaac"
-vvc_omx_encoder_select="omx_enc_vvc"
-mpegh_omx_encoder_select="omx_enc_mpegh"
 mp2v_omx_encoder_select="omx_enc_mp2v"
 
-mpegts_omx_muxer_select="omx_ts_mux"
 mxf_omx_muxer_select="omx_mxf_mux"
 
 # hardware-accelerated codecs
 mediafoundation_deps="mftransform_h MFCreateAlignedMemoryBuffer"
 omx_deps="libdl pthreads"
 omx_rpi_select="omx"
-omx_comp_if_any="omx_enc_avc omx_dec_avc dolby_omx_dec omx_enc_hevc omx_dec_hevc dolby_omx_enc omx_enc_xheaac omx_enc_vvc omx_enc_mpegh omx_enc_mp2v omx_ts_mux omx_mxf_mux"
+omx_comp_if_any="omx_enc_avc omx_enc_hevc omx_enc_mp2v omx_mxf_mux"
 qsv_deps="libmfx"
 qsvdec_select="qsv"
 qsvenc_select="qsv"
@@ -7095,16 +7071,8 @@ enabled omx_rpi           && { check_headers OMX_Core.h ||
                                { ! enabled cross_compile && add_cflags -isystem/opt/vc/include/IL && check_headers OMX_Core.h ; } ||
                                die "ERROR: OpenMAX IL headers not found"; } && enable omx
 enabled omx_enc_avc       && require_headers OMX_Core.h
-enabled omx_dec_avc       && require_headers OMX_Core.h
-enabled omx_enc_xheaac    && require_headers OMX_Core.h
-enabled dolby_omx_dec     && require_headers OMX_Core.h
-enabled dolby_omx_enc     && require_headers OMX_Core.h
 enabled omx_enc_hevc      && require_headers OMX_Core.h
-enabled omx_dec_hevc      && require_headers OMX_Core.h
-enabled omx_enc_vvc       && require_headers OMX_Core.h
-enabled omx_enc_mpegh     && require_headers OMX_Core.h
 enabled omx_enc_mp2v      && require_headers OMX_Core.h
-enabled omx_ts_mux        && require_headers OMX_Core.h
 enabled omx_mxf_mux       && require_headers OMX_Core.h
 enabled openssl           && { { check_pkg_config openssl "openssl >= 3.0.0" openssl/ssl.h OPENSSL_init_ssl &&
                                  { enabled gplv3 || ! enabled gpl || enabled nonfree || die "ERROR: OpenSSL >=3.0.0 requires --enable-version3"; }; } ||

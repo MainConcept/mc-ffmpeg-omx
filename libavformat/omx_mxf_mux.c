@@ -1,6 +1,6 @@
 /*
  * OMX MXF muxer
- * Copyright (c) 2022 MainConcept GmbH or its affiliates.
+ * Copyright (c) 2026 MainConcept GmbH or its affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -48,7 +48,7 @@ extern FFOutputFormat ff_mxf_omx_muxer;
   *             https://smpte-ra.org/sites/default/files/Labels.xml
   */
 
-#define MAX_STREAMS_COUNT 16
+#define MAX_STREAMS_COUNT 32
 
 typedef struct OMX_MXF_Mux {
     struct OMXComponentContext base;
@@ -65,6 +65,11 @@ typedef struct OMX_MXF_Mux {
     int split_track;
     int split_channel;
     int out_port_enabled;
+    pthread_mutex_t lock;
+    OMX_BUFFERHEADERTYPE** omx_buffers;
+    int omx_buffers_cnt;
+    int write_enabled;
+
 } OMX_MXF_Mux;
 
 typedef struct MXFStreamContext {
@@ -264,33 +269,75 @@ static int omx_set_muxer_commandline(AVFormatContext* avctx)
     return 0;
 }
 
-static OMX_BOOL fill_buffer_done_cb(OMXComponentContext* s, OMX_BUFFERHEADERTYPE* buffer)
-{
-    if (s->deiniting || s->eos_flag && buffer->nFilledLen == 0)
-        return OMX_FALSE;
 
+static OMX_BOOL write_buffer(OMX_MXF_Mux* s_mux, OMX_BUFFERHEADERTYPE* buffer)
+{
+    struct OMXComponentContext* s = &s_mux->base;
     AVFormatContext* avctx = s->avctx;
-    struct OMX_MXF_Mux* s_mux = avctx->priv_data;
 
     int64_t seek_pos = -1;
     parse_extradata(buffer, &seek_pos);
 
     OMX_U32 stream_idx = av_omx_rev_port_idx(s, buffer->nOutputPortIndex) - s_mux->first_out_port;
 
-    if (seek_pos >= 0) {
-        avio_seek(avctx->pb, seek_pos, SEEK_SET);
-        avio_write(s_mux->streams[stream_idx], buffer->pBuffer + buffer->nOffset, buffer->nFilledLen);
-        buffer->nFlags = 0;
-        avio_seek(avctx->pb, 0, SEEK_END);
-    }
-    else {
-        avio_write(s_mux->streams[stream_idx], buffer->pBuffer + buffer->nOffset, buffer->nFilledLen);
+
+    if (buffer->nFilledLen){
+        if (seek_pos >= 0) {
+            avio_seek(s_mux->streams[stream_idx], seek_pos, SEEK_SET);
+            avio_write(s_mux->streams[stream_idx], buffer->pBuffer + buffer->nOffset, buffer->nFilledLen);
+            buffer->nFlags = 0;
+            avio_seek(s_mux->streams[stream_idx], 0, SEEK_END);
+        } else {
+            avio_write(s_mux->streams[stream_idx], buffer->pBuffer + buffer->nOffset, buffer->nFilledLen);
+        }
     }
 
     buffer->nFilledLen = 0;
     OMX_FillThisBuffer(s->component, buffer);
 
     return OMX_TRUE;
+
+}
+
+
+static void mxf_write_buffered_omx(OMX_MXF_Mux  *s_mux)
+{
+    if (s_mux->omx_buffers_cnt)
+    {
+        int i = 0;
+        for(; i < s_mux->omx_buffers_cnt; i++)
+        {
+            write_buffer(s_mux, s_mux->omx_buffers[i]);
+        }
+        s_mux->omx_buffers_cnt = 0;
+    }
+}
+
+
+static OMX_BOOL fill_buffer_done_cb(OMXComponentContext* s, OMX_BUFFERHEADERTYPE* buffer)
+{
+    AVFormatContext* avctx = s->avctx;
+    struct OMX_MXF_Mux* s_mux = avctx->priv_data;
+
+    if (s->deiniting || s->eos_flag && buffer->nFilledLen == 0)
+        return OMX_FALSE;
+
+    OMX_U32 stream_idx = av_omx_rev_port_idx(s, buffer->nOutputPortIndex) - s_mux->first_out_port;
+
+
+    if(avctx->pb == s_mux->streams[stream_idx])
+    {
+        pthread_mutex_lock(&s_mux->lock);
+        s_mux->omx_buffers[s_mux->omx_buffers_cnt++] = buffer;
+
+        if (s_mux->write_enabled)
+            mxf_write_buffered_omx(s_mux);
+        pthread_mutex_unlock(&s_mux->lock);
+
+        return OMX_TRUE;
+    } else {
+        return write_buffer(s_mux, buffer);
+    }
 }
 
 static int omx_set_pic_param(AVFormatContext* avctx)
@@ -340,6 +387,29 @@ static char* remove_file_name_ext(char* myStr) {
     return retStr;
 }
 
+
+static int mxf_init_out_queue(AVFormatContext* avctx)
+{
+    int ret = -1;
+    struct OMX_MXF_Mux* s_mux = avctx->priv_data;
+    OMXComponentContext* s = avctx->priv_data;
+    int out_first_idx_port=0;
+
+    while (out_first_idx_port < MAX_PORT_NUMBER)
+    {
+	if (s->port_out[out_first_idx_port] && !s->port_disabled[out_first_idx_port])
+        {
+            s_mux->omx_buffers = malloc(sizeof(OMX_BUFFERHEADERTYPE*) * s->buffers_n[out_first_idx_port]);
+	    ret = 0;
+            break;
+        }
+	out_first_idx_port++;
+    }
+    s_mux->omx_buffers_cnt = 0;
+    s_mux->write_enabled = 0;
+    return ret;
+}
+
 static int mxf_init_avio(AVFormatContext* avctx)
 {
     AVIOContext* pb;
@@ -349,6 +419,11 @@ static int mxf_init_avio(AVFormatContext* avctx)
     OMXComponentContext* s = avctx->priv_data;
 
     s_mux->streams[0] = avctx->pb;
+
+    if (!(avctx->pb->seekable & AVIO_SEEKABLE_NORMAL)) {
+        av_log(s, AV_LOG_ERROR, "muxer does not support non seekable output\n");
+        return AVERROR(EINVAL);
+    }
 
     if (s_mux->split_track || s_mux->split_channel) {
 
@@ -419,6 +494,11 @@ static int mxf_init(AVFormatContext *avctx)
     ret = av_omx_cmpnt_start(s);
     if (ret) return ret;
 
+    ret = mxf_init_out_queue(avctx);
+    if (ret) return ret;
+
+    ret = pthread_mutex_init(&s_mux->lock, NULL);
+
     return ret;
 }
 
@@ -426,6 +506,11 @@ static void mxf_deinit(AVFormatContext *avctx)
 {
     struct OMX_MXF_Mux *s_mux = avctx->priv_data;
     struct OMXComponentContext *s = &s_mux->base;
+
+    if (s_mux->omx_buffers)
+        free(s_mux->omx_buffers);
+
+    pthread_mutex_destroy(&s_mux->lock);
 
     av_omx_cmpnt_end(s);
 }
@@ -444,6 +529,12 @@ static int mxf_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
 {
     struct OMX_MXF_Mux *s_mux = avctx->priv_data;
     struct OMXComponentContext *s = &s_mux->base;
+
+    pthread_mutex_lock(&s_mux->lock);
+    mxf_write_buffered_omx(s_mux);
+    s_mux->write_enabled = 1;
+    pthread_mutex_unlock(&s_mux->lock);
+
 
     int ret = 0;
     int buffer_eos_flag = 0;
@@ -466,6 +557,9 @@ static int mxf_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
 
     if (omx_port < 0) {
         av_log(avctx, AV_LOG_WARNING, "There are more input streams than muxer supports. Stream %i won't be muxed.\n", avpkt->stream_index);
+        pthread_mutex_lock(&s_mux->lock);
+        s_mux->write_enabled = 0;
+        pthread_mutex_unlock(&s_mux->lock);
         return 0;
     }
 
@@ -488,14 +582,20 @@ static int mxf_write_packet(AVFormatContext *avctx, AVPacket *avpkt)
     OMX_EmptyThisBuffer(s->component, buf);
 
     while (out_buf = av_omx_pick_output_buffer(s)) {
+
         out_buf->nFilledLen = 0;
         OMX_FillThisBuffer(s->component, out_buf);
     }
 
     if (s->cur_err == OMX_ErrorUndefined) {
+        pthread_mutex_lock(&s_mux->lock);
+        s_mux->write_enabled = 0;
+        pthread_mutex_unlock(&s_mux->lock);
         return -1;//end mux
     }
-
+    pthread_mutex_lock(&s_mux->lock);
+    s_mux->write_enabled = 0;
+    pthread_mutex_unlock(&s_mux->lock);
     return 0;
 }
 
@@ -504,6 +604,12 @@ static int mxf_write_end(AVFormatContext* avctx)
     OMXComponentContext* s = avctx->priv_data;
     struct OMX_MXF_Mux* s_mux = avctx->priv_data;
     OMX_BUFFERHEADERTYPE* out_buf = NULL;
+
+    pthread_mutex_lock(&s_mux->lock);
+    s_mux->write_enabled = 1;
+    mxf_write_buffered_omx(s_mux);
+    pthread_mutex_unlock(&s_mux->lock);
+
 
     for (int i = 0; i < s->port_num; i++)
     {
@@ -524,12 +630,18 @@ static int mxf_write_end(AVFormatContext* avctx)
             expect_eos--;
 
         out_buf->nFilledLen = 0;
+        out_buf->nFlags = 0;
         OMX_FillThisBuffer(s->component, out_buf);
 
         if (!expect_eos)
             break;
 
     }
+
+    pthread_mutex_lock(&s_mux->lock);
+    s_mux->write_enabled = 0;
+    pthread_mutex_unlock(&s_mux->lock);
+
     return 0;
 }
 
